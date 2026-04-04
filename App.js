@@ -1,16 +1,14 @@
-/**
- * App.js — React Native CLI version
- */
+import React, { useEffect, useRef, useState } from "react";
 import 'react-native-gesture-handler';
-import { StatusBar, StyleSheet, useColorScheme } from "react-native";
+import { StatusBar, StyleSheet, useColorScheme, View, Text, ActivityIndicator, TouchableOpacity } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createDrawerNavigator } from "@react-navigation/drawer";
+import { DrawerActions } from "@react-navigation/native"; // ✅ import manquant
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
-// ====== Screens ======
 import Login from "./component/Login";
 import Profile from "./component/EspacePatient/Profile";
 import ProfileMedecin from "./component/EspaceMedecin/ProfileMedecin";
@@ -32,10 +30,10 @@ import MotDePasseOublier from "./component/motDePasseOublier";
 import RenitialiserMdp from "./component/renitialiserMdp";
 import ConsultationVideo from "./component/EspaceMedecin/ConsultationVideo";
 import Home from './component/Home';
-import { initPusher } from './src/utils/Echo';
-import React, { useState, useEffect } from "react";
-
-// ====== Navigators ======
+import { initPusher, destroyPusher, isPusherConnected } from './src/utils/Echo';
+import PrivateChat from "./component/PrivateChat";
+import PublicForum from "./component/PublicForum";
+//import MessageriePrivee from "./component/MessageriePrivee"; 
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -43,55 +41,49 @@ const Drawer = createDrawerNavigator();
 function DrawerMenu() {
   return (
     <Drawer.Navigator
+      backBehavior="history"
       initialRouteName="Accueil"
-      screenOptions={({ route }) => ({
+      screenOptions={({ route, navigation }) => ({
         drawerType: "slide",
         drawerStyle: { width: 220 },
         drawerActiveTintColor: "#3B82F6",
         drawerInactiveTintColor: "#64748B",
+        headerShown: true,
+        headerStyle: { backgroundColor: "#3B82F6" },
+        headerTintColor: "#FFFFFF",
+        headerTitleAlign: "center",
+        headerLeft: () => (
+          <TouchableOpacity
+            style={{ marginLeft: 12 }}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        ),
+        
         drawerIcon: ({ color, size }) => {
           const icons = {
-            Profile:          'person-outline',
             Accueil:          'home-outline',
+            Profile:          'person-outline',
             RendezVous:       'calendar-outline',
             DossiersPatient:  'folder-open-outline',
             ListedesMedecins: 'people-outline',
           };
-          return (
-            <Ionicons
-              name={icons[route.name] || 'ellipse-outline'}
-              size={size}
-              color={color}
-            />
-          );
+          return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
         },
       })}
     >
-      <Drawer.Screen
-        name="Accueil"
-        component={Home}
-        options={{ drawerLabel: "Accueil" }}
-      />
-      <Drawer.Screen
-        name="Profile"
-        component={Profile}
-        options={{ drawerLabel: "Mon Profil" }}
-      />
+      <Drawer.Screen name="Accueil"          component={Home}           options={{ drawerLabel: "Accueil",             title: "Accueil" }} />
+      <Drawer.Screen name="Profile"          component={Profile}        options={{ drawerLabel: "Mon Profil",          headerShown: false,
+        title: "" }} />
       <Drawer.Screen
         name="RendezVous"
         component={RendezVous}
-        options={{ drawerLabel: "Mes Rendez-vous" }}
+        options={{ drawerLabel: "Mes Rendez-vous", title: "Mes Rendez-vous" }}
+        initialParams={{ ongletInitial: "mesrdv" }} // ✅ ouvre directement "Mes RDV"
       />
-      <Drawer.Screen
-        name="DossiersPatient"
-        component={DossiersPatient}
-        options={{ drawerLabel: "Mon Dossier Médical" }}
-      />
-      <Drawer.Screen
-        name="ListedesMedecins"
-        component={ListeMedecins}
-        options={{ drawerLabel: "Liste des Médecins" }}
-      />
+      <Drawer.Screen name="DossiersPatient"  component={DossiersPatient} options={{ drawerLabel: "Mon Dossier Médical", title: "Mon Dossier" }} />
+      <Drawer.Screen name="ListedesMedecins" component={ListeMedecins}   options={{ drawerLabel: "Liste des Médecins",  title: "Médecins" }} />
     </Drawer.Navigator>
   );
 }
@@ -112,31 +104,13 @@ function DrawerMed() {
             GestionRendezVous: 'calendar-outline',
             DossiersMedecin:   'folder-open-outline',
           };
-          return (
-            <Ionicons
-              name={icons[route.name] || 'ellipse-outline'}
-              size={size}
-              color={color}
-            />
-          );
+          return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
         },
       })}
     >
-      <Drawer.Screen
-        name="ProfileMedecin"
-        component={ProfileMedecin}
-        options={{ drawerLabel: "Mon Profil" }}
-      />
-      <Drawer.Screen
-        name="GestionRendezVous"
-        component={GestionRendezVous}
-        options={{ drawerLabel: "Rendez-vous" }}
-      />
-      <Drawer.Screen
-        name="DossiersMedecin"
-        component={DossiersMedecin}
-        options={{ drawerLabel: "Dossiers Médicaux" }}
-      />
+      <Drawer.Screen name="ProfileMedecin"    component={ProfileMedecin}    options={{ drawerLabel: "Mon Profil" }} />
+      <Drawer.Screen name="GestionRendezVous" component={GestionRendezVous} options={{ drawerLabel: "Rendez-vous" }} />
+      <Drawer.Screen name="DossiersMedecin"   component={DossiersMedecin}   options={{ drawerLabel: "Dossiers Médicaux" }} />
     </Drawer.Navigator>
   );
 }
@@ -156,44 +130,46 @@ function DrawerAdmin() {
             GestionPatient:       'people-outline',
             GestionMedecin:       'person-add-outline',
           };
-          return (
-            <Ionicons
-              name={icons[route.name] || 'ellipse-outline'}
-              size={size}
-              color={color}
-            />
-          );
+          return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
         },
       })}
     >
-      <Drawer.Screen
-        name="DashboardAdminDrawer"
-        component={DashboardAdmin}
-        options={{ drawerLabel: "Dashboard" }}
-      />
-      <Drawer.Screen
-        name="GestionSpecialite"
-        component={GestionSpecialites}
-        options={{ drawerLabel: "Spécialités" }}
-      />
-      <Drawer.Screen
-        name="GestionPatient"
-        component={GestionPatients}
-        options={{ drawerLabel: "Patients" }}
-      />
-      <Drawer.Screen
-        name="GestionMedecin"
-        component={GestionMedecins}
-        options={{ drawerLabel: "Médecins" }}
-      />
+      <Drawer.Screen name="DashboardAdminDrawer" component={DashboardAdmin}    options={{ drawerLabel: "Dashboard" }} />
+      <Drawer.Screen name="GestionSpecialite"    component={GestionSpecialites} options={{ drawerLabel: "Spécialités" }} />
+      <Drawer.Screen name="GestionPatient"       component={GestionPatients}    options={{ drawerLabel: "Patients" }} />
+      <Drawer.Screen name="GestionMedecin"       component={GestionMedecins}    options={{ drawerLabel: "Médecins" }} />
     </Drawer.Navigator>
   );
 }
 
 // ====== Main App ======
 export default function App() {
+  const [pusherStatus, setPusherStatus] = useState('initializing');
+  const initAttempted = useRef(false);
+
   useEffect(() => {
-    initPusher().catch(err => console.error('Pusher init error:', err));
+    const initializePusher = async () => {
+      if (initAttempted.current) return;
+      initAttempted.current = true;
+      try {
+        await initPusher();
+        setPusherStatus('connected');
+        const interval = setInterval(() => {
+          const connected = isPusherConnected();
+          if (!connected) {
+            setPusherStatus('reconnecting');
+            initPusher().catch(() => setPusherStatus('failed'));
+          } else {
+            setPusherStatus('connected');
+          }
+        }, 5000);
+        return () => clearInterval(interval);
+      } catch {
+        setPusherStatus('failed');
+      }
+    };
+    initializePusher();
+    return () => { destroyPusher?.(); initAttempted.current = false; };
   }, []);
 
   const isDarkMode = useColorScheme() === "dark";
@@ -204,14 +180,20 @@ export default function App() {
       screens: {
         RenitialiserMdp: {
           path: "reset-password",
-          parse: {
-            token: (token) => token,
-            email: (email) => email,
-          },
+          parse: { token: (t) => t, email: (e) => e },
         },
       },
     },
   };
+
+  if (pusherStatus === 'initializing') {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+        <Text style={styles.loadingText}>Initialisation des notifications...</Text>
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -219,103 +201,27 @@ export default function App() {
         <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
         <NavigationContainer linking={linking}>
           <Stack.Navigator initialRouteName="Home">
+            <Stack.Screen name="Home"           component={Home}           options={{ headerShown: false }} />
+            <Stack.Screen name="Login"          component={Login}          options={{ headerShown: false }} />
+            <Stack.Screen name="Register"       component={Register}       options={{ headerShown: false }} />
+            <Stack.Screen name="RegisterMedecin" component={RegisterMedecin} options={{ title: "Inscription Médecin" }} />
 
-            {/* ── Screens publiques ── */}
-            <Stack.Screen name="Home" component={Home} options={{ headerShown: false }} />
+            <Stack.Screen name="Admin"   component={DrawerAdmin} options={{ headerShown: false }} />
+            <Stack.Screen name="Main"    component={DrawerMenu}  options={{ headerShown: false }} />
+            <Stack.Screen name="Medecin" component={DrawerMed}   options={{ headerShown: false }} />
+            <Stack.Screen name="Forum"   component={PublicForum} options={{ title: "Poser votre question" }} style={styles.headerTitle} />
+            <Stack.Screen name="Symptomes"        component={Symptomes}      options={{ title: "Analyser vos Symptômes" }} />
+            <Stack.Screen name="ListeMedecinsStack" component={ListeMedecins} options={{ title: "Liste des Médecins" }} />
+            <Stack.Screen name="DetailleMedecin"  component={DetailleMedecin} options={{ title: "Détails du Médecin" }} />
+            <Stack.Screen name="RendezVousStack"  component={RendezVous}     options={{ title: "Prendre Rendez-vous" }} />
 
-            <Stack.Screen
-              name="Login"
-              component={Login}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Register"
-              component={Register}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="RegisterMedecin"
-              component={RegisterMedecin}
-              options={{ title: "Inscription Médecin" }}
-            />
-
-            {/* ── Drawers ── */}
-            <Stack.Screen
-              name="Admin"
-              component={DrawerAdmin}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Main"
-              component={DrawerMenu}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Medecin"
-              component={DrawerMed}
-              options={{ headerShown: false }}
-            />
-
-            {/* ── Screens communes ── */}
-            <Stack.Screen
-              name="Symptomes"
-              component={Symptomes}
-              options={{ title: "Analyser vos Symptômes" }}
-            />
-            <Stack.Screen
-              name="ListeMedecinsStack"
-              component={ListeMedecins}
-              options={{ title: "Liste des Médecins" }}
-            />
-            <Stack.Screen
-              name="DetailleMedecin"
-              component={DetailleMedecin}
-              options={{ title: "Détails du Médecin" }}
-            />
-            <Stack.Screen
-              name="RendezVousStack"
-              component={RendezVous}
-              options={{ title: "Prendre Rendez-vous" }}
-            />
-
-            {/* ── Consultation Vidéo ── */}
-            <Stack.Screen
-              name="ConsultationVideo"
-              component={ConsultationVideo}
-              options={{ headerShown: false, gestureEnabled: false }}
-            />
-
-            {/* ── Dossiers Médicaux Médecin ── */}
-            <Stack.Screen
-              name="DossiersMedecin"
-              component={DossiersMedecin}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="DetailDossier"
-              component={DetailDossier}
-              options={{ headerShown: false }}
-            />
-
-            {/* ── Mot de passe ── */}
-            <Stack.Screen
-              name="MotDePasseOublier"
-              component={MotDePasseOublier}
-              options={{ title: "Mot de passe oublié" }}
-            />
-            <Stack.Screen
-              name="RenitialiserMdp"
-              component={RenitialiserMdp}
-              options={{ title: "Réinitialiser le mot de passe" }}
-            />
-
-            {/* ── Dossiers Médicaux Patient ── */}
-            <Stack.Screen
-              name="DossiersPatient"
-              component={DossiersPatient}
-              options={{ headerShown: false }}
-            />
-
+            <Stack.Screen name="ConsultationVideo" component={ConsultationVideo} options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="DossiersMedecin"   component={DossiersMedecin}   options={{ headerShown: false }} />
+            <Stack.Screen name="DetailDossier"     component={DetailDossier}     options={{ headerShown: false }} />
+            <Stack.Screen name="MotDePasseOublier" component={MotDePasseOublier} options={{ title: "Mot de passe oublié" }} />
+            <Stack.Screen name="RenitialiserMdp"   component={RenitialiserMdp}   options={{ title: "Réinitialiser le mot de passe" }} />
+            <Stack.Screen name="DossiersPatient"   component={DossiersPatient}   options={{ headerShown: false }} />
+            <Stack.Screen name="PrivateChat"       component={PrivateChat}       options={{ title: "Chat" }} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>
@@ -324,5 +230,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F7FA' },
+  loadingText: { marginTop: 12, fontSize: 14, color: '#64748B' },
+
+  
 });

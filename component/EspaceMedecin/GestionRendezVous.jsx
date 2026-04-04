@@ -19,12 +19,22 @@ export default function GestionRendezVous({ navigation }) {
   const [dossierRdv, setDossierRdv]             = useState(null);
   const [consultationExistante, setConsultationExistante] = useState(null);
 
-  // Champs
   const [type, setType]             = useState("presentiel");
   const [diagnostic, setDiagnostic] = useState("");
   const [traitement, setTraitement] = useState("");
   const [saving, setSaving]         = useState(false);
   const [loadingConsult, setLoadingConsult] = useState(false);
+
+ const getPatientName = (rdv) => {
+  if (rdv.patient_nom_complet && rdv.patient_nom_complet !== 'Patient inconnu')
+    return rdv.patient_nom_complet;
+  if (rdv.patient_prenom && rdv.patient_nom)
+    return `${rdv.patient_prenom} ${rdv.patient_nom}`;
+  if (rdv.patient?.user?.prenom && rdv.patient?.user?.nom)
+    return `${rdv.patient.user.prenom} ${rdv.patient.user.nom}`;
+  if (rdv.patient?.nom) return rdv.patient.nom;
+  return "Patient";
+};
 
   useEffect(() => { chargerMedecin(); }, []);
 
@@ -163,58 +173,57 @@ export default function GestionRendezVous({ navigation }) {
     ]);
   };
 
-const demarrerVideo = async (rdv) => {
-  try {
-    const resDossier = await API.get(`/dossiers/medecin/${idMedecin}`);
-    const dossiers   = resDossier.data?.dossiers ?? [];
-    const patientId  = rdv.patient?.id ?? rdv.id_patient;
-    const dossier    = dossiers.find(d =>
-      d.patient_id === patientId || d.patient?.id === patientId
-    );
+  const demarrerVideo = async (rdv) => {
+    try {
+      const resDossier = await API.get(`/dossiers/medecin/${idMedecin}`);
+      const dossiers   = resDossier.data?.dossiers ?? [];
+      const patientId  = rdv.patient?.id ?? rdv.id_patient;
+      const dossier    = dossiers.find(d =>
+        d.patient_id === patientId || d.patient?.id === patientId
+      );
 
-    if (!dossier) {
-      Alert.alert("Erreur", "Aucun dossier médical pour ce patient.\nCréez-en un d'abord.");
-      return;
-    }
+      if (!dossier) {
+        Alert.alert("Erreur", "Aucun dossier médical pour ce patient.\nCréez-en un d'abord.");
+        return;
+      }
 
-    const resConsult    = await API.get(`/consultations/dossier/${dossier.id}`);
-    const consultations = resConsult.data?.consultations ?? [];
-    const dateRdv       = rdv.date?.substring(0, 10);
+      const resConsult    = await API.get(`/consultations/dossier/${dossier.id}`);
+      const consultations = resConsult.data?.consultations ?? [];
+      const dateRdv       = rdv.date?.substring(0, 10);
 
-    let consultation = consultations.find(c =>
-      c.type === "video" && c.date_consultation?.substring(0, 10) === dateRdv
-    );
+      let consultation = consultations.find(c =>
+        c.type === "video" && c.date_consultation?.substring(0, 10) === dateRdv
+      );
 
-    if (!consultation) {
-      const res = await API.post("/consultations", {
-        dossier_medical_id: dossier.id,
-        date_consultation:  rdv.date,
-        type: "video",
+      if (!consultation) {
+        const res = await API.post("/consultations", {
+          dossier_medical_id: dossier.id,
+          date_consultation:  rdv.date,
+          type: "video",
+        });
+        consultation = res.data?.consultation;
+      }
+
+      if (!consultation?.id) {
+        Alert.alert("Erreur", "Impossible de créer la consultation vidéo");
+        return;
+      }
+
+      const userData = await AsyncStorage.getItem("userData");
+      const user = userData ? JSON.parse(userData) : {};
+      const medecinName = `${user.prenom || "Dr"} ${user.nom || ""}`.trim() || "Médecin";
+
+      navigation.navigate("ConsultationVideo", {
+        consultationId: consultation.id,
+        role: "medecin",
+        userName: medecinName,
+        roomId: consultation.room_id || rdv.id 
       });
-      consultation = res.data?.consultation;
+    } catch (e) {
+      Alert.alert("Erreur", e.response?.data?.message ?? "Erreur lors du démarrage vidéo");
     }
+  };
 
-    if (!consultation?.id) {
-      Alert.alert("Erreur", "Impossible de créer la consultation vidéo");
-      return;
-    }
-
-    // Récupérer le nom du médecin
-    const userData = await AsyncStorage.getItem("userData");
-    const user = userData ? JSON.parse(userData) : {};
-    const medecinName = `${user.prenom || "Dr"} ${user.nom || ""}`.trim() || "Médecin";
-
-    // Naviguer vers la consultation avec le nom du médecin
-    navigation.navigate("ConsultationVideo", {
-      consultationId: consultation.id,
-      role: "medecin",
-      userName: medecinName,
-      roomId: consultation.room_id || rdv.id // Utiliser l'ID du rendez-vous comme room
-    });
-  } catch (e) {
-    Alert.alert("Erreur", e.response?.data?.message ?? "Erreur lors du démarrage vidéo");
-  }
-};
   const getEtatColor = (etat) => {
     switch (etat) {
       case "confirmé":  return "#10B981";
@@ -262,13 +271,11 @@ const demarrerVideo = async (rdv) => {
               <View style={styles.cardHeader}>
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>
-                    {(rdv.patient?.user?.prenom ?? rdv.patient?.nom ?? "?")[0]?.toUpperCase()}
+                    {getPatientName(rdv).charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.patientNom}>
-                    {rdv.patient?.user?.prenom ?? ""} {rdv.patient?.user?.nom ?? rdv.patient?.nom ?? "Patient"}
-                  </Text>
+                  <Text style={styles.patientNom}>{getPatientName(rdv)}</Text>
                   <View style={styles.dateRow}>
                     <Ionicons name="calendar-outline" size={13} color="#64748B" />
                     <Text style={styles.dateText}>{rdv.date} à {rdv.heure}</Text>
@@ -342,8 +349,7 @@ const demarrerVideo = async (rdv) => {
               <View style={styles.rdvInfo}>
                 <Ionicons name="person-outline" size={14} color="#3B82F6" />
                 <Text style={styles.rdvInfoText}>
-                  {rdvSelectionne.patient?.user?.prenom ?? ""} {rdvSelectionne.patient?.user?.nom ?? ""}
-                  {"  •  "}{rdvSelectionne.date}
+                  {getPatientName(rdvSelectionne)} • {rdvSelectionne.date}
                 </Text>
               </View>
             )}

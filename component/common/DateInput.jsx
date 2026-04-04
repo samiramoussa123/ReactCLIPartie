@@ -5,7 +5,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 export default function DateInput({ value, onChange }) {
   const [show, setShow] = useState(false);
 
-  // WEB
+ 
   if (Platform.OS === "web") {
     return (
       <TextInput
@@ -19,12 +19,11 @@ export default function DateInput({ value, onChange }) {
           borderRadius: 16,
           backgroundColor: "#F8FAFC",
         }}
-        type="date" //  clé pour web
+        type="date"   
       />
     );
   }
 
-  //  MOBILE
   return (
     <View>
       <TouchableOpacity

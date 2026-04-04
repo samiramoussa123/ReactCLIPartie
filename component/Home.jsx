@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Dimensions, StatusBar, Alert,
@@ -14,6 +14,7 @@ import { subscribeToChannel, unsubscribeFromChannel } from '../src/utils/Echo';
 const { width } = Dimensions.get('window');
 
 export default function Home({ navigation }) {
+  const subscriptionsRef = useRef([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('Tous');
   const [doctors, setDoctors] = useState([]);
@@ -61,18 +62,6 @@ export default function Home({ navigation }) {
       screen: "Main" 
     }
   ];
-
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [1, 0.95],
-    extrapolate: 'clamp',
-  });
-
-  const headerScale = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [1, 0.98],
-    extrapolate: 'clamp',
-  });
 
   const fetchDoctors = async () => {
     try {
@@ -164,7 +153,8 @@ export default function Home({ navigation }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [medecinsData] = await Promise.all([fetchDoctors(), fetchSpecialties()]);
+      const medecinsData = await fetchDoctors();
+      await fetchSpecialties();
       await fetchStats(medecinsData || []);
     } catch (error) {
       console.error('Erreur chargement:', error);
@@ -179,104 +169,102 @@ export default function Home({ navigation }) {
     setRefreshing(false);
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    loadData(); 
+  }, []);
 
+  // Effet pour les notifications Pusher
   useEffect(() => {
+    let isMounted = true;
     let channelName = null;
-    const initEcho = async () => {
+
+    const setupNotifications = async () => {
       try {
         const userData = await AsyncStorage.getItem("userData");
         if (!userData) return;
+        
         const user = JSON.parse(userData);
-        channelName = `patient.${user.id}`;
-        await subscribeToChannel(channelName, 'rappel.rendez-vous', (data) => {
-          Alert.alert(
-            data.titre || 'Rappel RDV',
-            data.corps || 'Vous avez un rendez-vous prévu.'
-          );
-        });
+        
+        if (user.role === 'patient') {
+          channelName = `patient.${user.id}`;
+          
+          await subscribeToChannel(channelName, 'rappel.rendez-vous', (data) => {
+            if (isMounted) {
+              Alert.alert(
+                data.titre || 'Rappel RDV',
+                data.corps || 'Vous avez un rendez-vous prévu.'
+              );
+            }
+          });
+          
+          subscriptionsRef.current.push(channelName);
+          console.log(`✅ Notifications activées pour ${channelName}`);
+        }
       } catch (error) {
-        console.error('Erreur Pusher:', error.message);
+        console.error('Erreur configuration notifications:', error);
       }
     };
-    initEcho();
+    
+    setupNotifications();
+    
     return () => {
-      if (channelName) unsubscribeFromChannel(channelName).catch(() => {});
+      isMounted = false;
+      subscriptionsRef.current.forEach(async (channel) => {
+        try {
+          await unsubscribeFromChannel(channel);
+        } catch (error) {
+          console.error('Erreur désabonnement:', error);
+        }
+      });
+      subscriptionsRef.current = [];
     };
   }, []);
 
-  const navigateToProfile = async () => {
+const navigateToProfile = async () => {
   try {
-    // Vérifier d'abord si l'utilisateur est connecté via AsyncStorage
     const userData = await AsyncStorage.getItem("userData");
     const token = await AsyncStorage.getItem("token");
     
-    // Si pas de données utilisateur ou pas de token, rediriger vers login
     if (!userData || !token) {
-      console.log("Aucune session trouvée, redirection vers login");
       navigation.navigate("Login");
       return;
     }
     
-    // Vérifier que les données sont valides
-    let user;
-    try {
-      user = JSON.parse(userData);
-    } catch (parseError) {
-      console.error("Erreur parsing userData:", parseError);
-      await AsyncStorage.removeItem("userData");
-      await AsyncStorage.removeItem("token");
-      navigation.navigate("Login");
-      return;
-    }
+    const user = JSON.parse(userData);
     
-    // Vérifier que l'utilisateur a un rôle valide
-    if (!user || !user.role) {
-      console.log("Données utilisateur invalides, redirection vers login");
-      await AsyncStorage.removeItem("userData");
-      await AsyncStorage.removeItem("token");
-      navigation.navigate("Login");
-      return;
-    }
-    
-    // Optionnel: Vérifier la validité du token avec une API call
-    // try {
-    //   await ApiPublic.get('/verify-token');
-    // } catch (tokenError) {
-    //   console.log("Token invalide, redirection vers login");
-    //   await AsyncStorage.removeItem("userData");
-    //   await AsyncStorage.removeItem("token");
-    //   navigation.navigate("Login");
-    //   return;
-    // }
-    
-    // Rediriger selon le rôle
-    console.log("Navigation profil pour rôle:", user.role);
     if (user.role === "medecin") {
-      navigation.navigate("Medecin");
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Medecin" }],
+      });
     } else if (user.role === "admin") {
-      navigation.navigate("Admin");
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Admin" }],
+      });
     } else if (user.role === "patient") {
-      navigation.navigate("Main");
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: "Main",
+            state: {
+              routes: [
+                { name: "Profile" }
+              ],
+            },
+          },
+        ],
+      });
     } else {
-      // Rôle inconnu, rediriger vers login
-      console.log("Rôle inconnu:", user.role);
       navigation.navigate("Login");
     }
     
   } catch (error) {
-    console.error("Erreur lors de la navigation profil:", error);
-    // En cas d'erreur, nettoyer le storage et rediriger vers login
-    try {
-      await AsyncStorage.removeItem("userData");
-      await AsyncStorage.removeItem("token");
-    } catch (cleanError) {
-      console.error("Erreur nettoyage storage:", cleanError);
-    }
+    console.error("Erreur navigation:", error);
     navigation.navigate("Login");
   }
 };
-
   const handleAppointment = (doctor) => {
     if (doctor.disponible) {
       Alert.alert(
@@ -375,7 +363,6 @@ export default function Home({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
-      {/* Navbar */}
       <View style={styles.navbar}>
         <View style={styles.navbarLeft}>
           <Text style={styles.logo}>TéleSanté+</Text>
@@ -414,7 +401,6 @@ export default function Home({ navigation }) {
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}
       >
-        {/* Header Gradient */}
         <LinearGradient
           colors={['#3B82F6', '#2563EB']}
           style={styles.header}
@@ -430,7 +416,6 @@ export default function Home({ navigation }) {
           <Text style={styles.headerSubtitle}>Votre assistant santé intelligent</Text>
         </LinearGradient>
 
-        {/* Search Bar */}
         <View style={styles.searchContainer}>
           <View style={styles.searchBar}>
             <Ionicons name="search-outline" size={20} color="#9CA3AF" />
@@ -449,7 +434,6 @@ export default function Home({ navigation }) {
           </View>
         </View>
 
-        {/* Specialties */}
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false}
@@ -475,7 +459,6 @@ export default function Home({ navigation }) {
           ))}
         </ScrollView>
 
-        {/* Stats */}
         <View style={styles.statsContainer}>
           {stats.map((stat) => (
             <View key={stat.id} style={styles.statCard}>
@@ -488,7 +471,6 @@ export default function Home({ navigation }) {
           ))}
         </View>
 
-        {/* Doctors Section */}
         <View style={styles.doctorsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Médecins disponibles</Text>
@@ -514,7 +496,32 @@ export default function Home({ navigation }) {
           )}
         </View>
 
-        {/* Hero Section - Symptom Analysis */}
+        <TouchableOpacity 
+          style={styles.forumSection}
+          onPress={() => navigation.navigate("Forum")}
+          activeOpacity={0.9}
+        >
+          <LinearGradient
+            colors={['#8B5CF6', '#6D28D9']}
+            style={styles.forumGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.forumContent}>
+              <View style={styles.forumIconContainer}>
+                <Ionicons name="chatbubbles" size={32} color="#FFFFFF" />
+              </View>
+              <View style={styles.forumTextContainer}>
+                <Text style={styles.forumTitle}>Forum Public</Text>
+                <Text style={styles.forumDescription}>
+                  Échangez avec la communauté, posez vos questions et partagez vos expériences
+                </Text>
+              </View>
+              <Ionicons name="arrow-forward-circle" size={32} color="#FFFFFF" />
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={styles.heroSection}
           onPress={() => navigation.navigate("Symptomes")}
@@ -541,7 +548,6 @@ export default function Home({ navigation }) {
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Services Section */}
         <Text style={styles.servicesTitle}>Nos services</Text>
         <View style={styles.featuresGrid}>
           {features.map((feature) => (
@@ -573,7 +579,6 @@ export default function Home({ navigation }) {
           ))}
         </View>
 
-        {/* Doctor Registration Section */}
         <LinearGradient
           colors={['#10B981', '#059669']}
           style={styles.doctorSection}
@@ -600,7 +605,6 @@ export default function Home({ navigation }) {
           </View>
         </LinearGradient>
 
-        {/* Tip Card */}
         <View style={styles.tipCard}>
           <View style={styles.tipHeader}>
             <View style={styles.tipIconContainer}>
@@ -613,7 +617,6 @@ export default function Home({ navigation }) {
           </Text>
         </View>
 
-        {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>En cas d'urgence, appelez le 198</Text>
           <Text style={styles.footerCopyright}>© 2026 TéleSanté+ - Tous droits réservés</Text>
@@ -624,533 +627,102 @@ export default function Home({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: "#6B7280",
-  },
-  navbar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-  },
-  navbarLeft: {
-    flex: 1,
-  },
-  logo: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#3B82F6",
-  },
-  navbarRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  navButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EFF6FF",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
-  },
-  doctorNavButton: {
-    backgroundColor: "#E7F5E9",
-  },
-  navButtonText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#3B82F6",
-  },
-  doctorNavText: {
-    color: "#10B981",
-  },
-  profileIcon: {
-    marginLeft: 4,
-  },
-  scrollContainer: {
-    paddingBottom: 30,
-  },
-  header: {
-    paddingTop: 20,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  headerContent: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  welcomeContainer: {
-    flex: 1,
-  },
-  welcomeText: {
-    fontSize: 14,
-    color: "#EFF6FF",
-    fontWeight: "500",
-    letterSpacing: 0.5,
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    marginTop: 2,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: "#EFF6FF",
-    opacity: 0.9,
-    marginTop: 5,
-  },
-  searchContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 10,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 30,
-    gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#1F2937",
-    padding: 0,
-  },
-  specialtiesContainer: {
-    maxHeight: 50,
-    marginBottom: 20,
-  },
-  specialtiesContent: {
-    paddingHorizontal: 20,
-    gap: 10,
-  },
-  specialtyChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  specialtyChipActive: {
-    backgroundColor: "#3B82F6",
-    borderColor: "#3B82F6",
-  },
-  specialtyChipText: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  specialtyChipTextActive: {
-    color: "#FFFFFF",
-  },
-  statsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  statCard: {
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 16,
-    width: (width - 60) / 3,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0F172A",
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#64748B",
-  },
-  doctorsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  doctorCount: {
-    fontSize: 14,
-    color: "#6B7280",
-  },
-  doctorCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  doctorCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  doctorAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  doctorAvatarText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  doctorInfo: {
-    flex: 1,
-  },
-  doctorName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1F2937",
-  },
-  doctorSpecialty: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 2,
-  },
-  doctorRating: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-    gap: 4,
-  },
-  doctorRatingText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#1F2937",
-  },
-  doctorReviewCount: {
-    fontSize: 11,
-    color: "#9CA3AF",
-  },
-  availabilityBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: "#F3F4F6",
-  },
-  availabilityText: {
-    fontSize: 11,
-    fontWeight: "500",
-  },
-  available: {
-    backgroundColor: "#10B98115",
-  },
-  unavailable: {
-    backgroundColor: "#EF444415",
-  },
-  doctorDetails: {
-    marginBottom: 12,
-    gap: 6,
-  },
-  doctorDetailItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  doctorDetailText: {
-    fontSize: 12,
-    color: "#4B5563",
-    flex: 1,
-  },
-  appointmentButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#3B82F6",
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-  },
-  appointmentButtonDisabled: {
-    backgroundColor: "#9CA3AF",
-  },
-  appointmentButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  noResults: {
-    alignItems: "center",
-    paddingVertical: 40,
-  },
-  noResultsText: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    marginTop: 10,
-  },
-  resetButton: {
-    marginTop: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#3B82F6",
-    borderRadius: 20,
-  },
-  resetButtonText: {
-    fontSize: 12,
-    color: "#FFFFFF",
-    fontWeight: "500",
-  },
-  heroSection: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#4F46E5",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  heroGradient: {
-    padding: 20,
-  },
-  heroContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 15,
-  },
-  heroIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  heroTextContainer: {
-    flex: 1,
-  },
-  heroTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
-    marginBottom: 4,
-  },
-  heroDescription: {
-    fontSize: 12,
-    color: "#EFF6FF",
-    opacity: 0.9,
-    lineHeight: 16,
-  },
-  servicesTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0F172A",
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  featuresGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    gap: 15,
-  },
-  featureCard: {
-    width: (width - 55) / 2,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-    marginBottom: 15,
-  },
-  featureIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  featureTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#0F172A",
-    marginBottom: 6,
-  },
-  featureDescription: {
-    fontSize: 12,
-    color: "#64748B",
-    lineHeight: 16,
-  },
-  doctorSection: {
-    marginHorizontal: 20,
-    marginVertical: 24,
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#10B981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  doctorContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    gap: 12,
-  },
-  doctorIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  doctorTextContainer: {
-    flex: 1,
-  },
-  doctorTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
-    marginBottom: 2,
-  },
-  doctorDescription: {
-    fontSize: 12,
-    color: "#FFFFFF",
-    opacity: 0.9,
-  },
-  doctorButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    gap: 4,
-  },
-  doctorButtonText: {
-    color: "#10B981",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  tipCard: {
-    backgroundColor: "#FFFFFF",
-    marginHorizontal: 20,
-    marginVertical: 16,
-    padding: 16,
-    borderRadius: 16,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  tipHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  tipIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#FEF3C7",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  tipTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-  tipText: {
-    fontSize: 14,
-    color: "#475569",
-    lineHeight: 20,
-  },
-  footer: {
-    alignItems: "center",
-    marginTop: 30,
-    paddingTop: 20,
-    paddingBottom: 20,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-  },
-  footerText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#EF4444",
-    marginBottom: 8,
-  },
-  footerCopyright: {
-    fontSize: 12,
-    color: "#94A3B8",
-  },
+  
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" },
+  loadingText: { marginTop: 12, fontSize: 14, color: "#6B7280" },
+  navbar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E5E7EB" },
+  navbarLeft: { flex: 1 },
+  logo: { fontSize: 18, fontWeight: "700", color: "#3B82F6" },
+  navbarRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  navButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#EFF6FF", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, gap: 4 },
+  doctorNavButton: { backgroundColor: "#E7F5E9" },
+  navButtonText: { fontSize: 12, fontWeight: "500", color: "#3B82F6" },
+  doctorNavText: { color: "#10B981" },
+  profileIcon: { marginLeft: 4 },
+  scrollContainer: { paddingBottom: 30 },
+  header: { paddingTop: 20, paddingBottom: 30, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, shadowColor: "#2563EB", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 },
+  headerContent: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  welcomeContainer: { flex: 1 },
+  welcomeText: { fontSize: 14, color: "#EFF6FF", fontWeight: "500", letterSpacing: 0.5 },
+  appName: { fontSize: 28, fontWeight: "700", color: "#FFFFFF", marginTop: 2 },
+  headerSubtitle: { fontSize: 14, color: "#EFF6FF", opacity: 0.9, marginTop: 5 },
+  searchContainer: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
+  searchBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 30, gap: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  searchInput: { flex: 1, fontSize: 14, color: "#1F2937", padding: 0 },
+  specialtiesContainer: { maxHeight: 50, marginBottom: 20 },
+  specialtiesContent: { paddingHorizontal: 20, gap: 10 },
+  specialtyChip: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#FFFFFF", borderRadius: 25, borderWidth: 1, borderColor: "#E5E7EB" },
+  specialtyChipActive: { backgroundColor: "#3B82F6", borderColor: "#3B82F6" },
+  specialtyChipText: { fontSize: 13, color: "#6B7280" },
+  specialtyChipTextActive: { color: "#FFFFFF" },
+  statsContainer: { flexDirection: "row", justifyContent: "space-around", paddingHorizontal: 20, marginBottom: 24 },
+  statCard: { alignItems: "center", backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, width: (width - 60) / 3, shadowColor: "#1E293B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  statIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginBottom: 8 },
+  statValue: { fontSize: 18, fontWeight: "700", color: "#0F172A", marginBottom: 2 },
+  statLabel: { fontSize: 12, color: "#64748B" },
+  doctorsSection: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  sectionTitle: { fontSize: 20, fontWeight: "700", color: "#0F172A" },
+  doctorCount: { fontSize: 14, color: "#6B7280" },
+  doctorCard: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  doctorCardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  doctorAvatar: { width: 50, height: 50, borderRadius: 25, justifyContent: "center", alignItems: "center", marginRight: 12 },
+  doctorAvatarText: { fontSize: 20, fontWeight: "600", color: "#FFFFFF" },
+  doctorInfo: { flex: 1 },
+  doctorName: { fontSize: 16, fontWeight: "600", color: "#1F2937" },
+  doctorSpecialty: { fontSize: 13, color: "#6B7280", marginTop: 2 },
+  doctorRating: { flexDirection: "row", alignItems: "center", marginTop: 4, gap: 4 },
+  doctorRatingText: { fontSize: 12, fontWeight: "600", color: "#1F2937" },
+  doctorReviewCount: { fontSize: 11, color: "#9CA3AF" },
+  availabilityBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: "#F3F4F6" },
+  availabilityText: { fontSize: 11, fontWeight: "500" },
+  available: { backgroundColor: "#10B98115" },
+  unavailable: { backgroundColor: "#EF444415" },
+  doctorDetails: { marginBottom: 12, gap: 6 },
+  doctorDetailItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  doctorDetailText: { fontSize: 12, color: "#4B5563", flex: 1 },
+  appointmentButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#3B82F6", paddingVertical: 10, borderRadius: 12, gap: 6 },
+  appointmentButtonDisabled: { backgroundColor: "#9CA3AF" },
+  appointmentButtonText: { fontSize: 13, fontWeight: "600", color: "#FFFFFF" },
+  noResults: { alignItems: "center", paddingVertical: 40 },
+  noResultsText: { fontSize: 14, color: "#9CA3AF", marginTop: 10 },
+  resetButton: { marginTop: 16, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#3B82F6", borderRadius: 20 },
+  resetButtonText: { fontSize: 12, color: "#FFFFFF", fontWeight: "500" },
+  forumSection: { marginHorizontal: 20, marginVertical: 24, borderRadius: 20, overflow: "hidden", shadowColor: "#8B5CF6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 5 },
+  forumGradient: { padding: 20 },
+  forumContent: { flexDirection: "row", alignItems: "center", gap: 15 },
+  forumIconContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  forumTextContainer: { flex: 1 },
+  forumTitle: { fontSize: 18, fontWeight: "700", color: "#FFFFFF", marginBottom: 4 },
+  forumDescription: { fontSize: 12, color: "#FFFFFF", opacity: 0.9, lineHeight: 16 },
+  heroSection: { marginHorizontal: 20, marginBottom: 24, borderRadius: 20, overflow: "hidden", shadowColor: "#4F46E5", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 5 },
+  heroGradient: { padding: 20 },
+  heroContent: { flexDirection: "row", alignItems: "center", gap: 15 },
+  heroIconContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  heroTextContainer: { flex: 1 },
+  heroTitle: { fontSize: 16, fontWeight: "600", color: "#FFFFFF", marginBottom: 4 },
+  heroDescription: { fontSize: 12, color: "#EFF6FF", opacity: 0.9, lineHeight: 16 },
+  servicesTitle: { fontSize: 20, fontWeight: "700", color: "#0F172A", marginHorizontal: 20, marginBottom: 16 },
+  featuresGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 20, gap: 15 },
+  featureCard: { width: (width - 55) / 2, backgroundColor: "#FFFFFF", borderRadius: 20, padding: 16, shadowColor: "#1E293B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3, marginBottom: 15 },
+  featureIcon: { width: 50, height: 50, borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 12 },
+  featureTitle: { fontSize: 16, fontWeight: "600", color: "#0F172A", marginBottom: 6 },
+  featureDescription: { fontSize: 12, color: "#64748B", lineHeight: 16 },
+  doctorSection: { marginHorizontal: 20, marginVertical: 24, borderRadius: 20, overflow: "hidden", shadowColor: "#10B981", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 5 },
+  doctorContent: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
+  doctorIconContainer: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  doctorTextContainer: { flex: 1 },
+  doctorTitle: { fontSize: 16, fontWeight: "600", color: "#FFFFFF", marginBottom: 2 },
+  doctorDescription: { fontSize: 12, color: "#FFFFFF", opacity: 0.9 },
+  doctorButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, gap: 4 },
+  doctorButtonText: { color: "#10B981", fontSize: 12, fontWeight: "600" },
+  tipCard: { backgroundColor: "#FFFFFF", marginHorizontal: 20, marginVertical: 16, padding: 16, borderRadius: 16, shadowColor: "#1E293B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  tipHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  tipIconContainer: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#FEF3C7", justifyContent: "center", alignItems: "center" },
+  tipTitle: { fontSize: 16, fontWeight: "600", color: "#0F172A" },
+  tipText: { fontSize: 14, color: "#475569", lineHeight: 20 },
+  footer: { alignItems: "center", marginTop: 30, paddingTop: 20, paddingBottom: 20, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
+  footerText: { fontSize: 14, fontWeight: "600", color: "#EF4444", marginBottom: 8 },
+  footerCopyright: { fontSize: 12, color: "#94A3B8" },
 });

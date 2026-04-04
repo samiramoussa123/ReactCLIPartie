@@ -20,12 +20,12 @@ export default function ConsultationVideo({ route, navigation }) {
   const [webviewReady, setWebviewReady] = useState(false);
   const [error, setError]             = useState(null);
 
-  // ✅ useCallback pour éviter re-création à chaque render
+  // pour éviter le re-création à chaque render
   const init = useCallback(async () => {
     try {
       setError(null);
 
-      // 1. Démarrer ou rejoindre selon le rôle
+      //  Démarrer ou rejoindre selon le rôle
       if (role === "medecin") {
         await API.post(`/consultations/${consultationId}/video/demarrer`);
         setStatut("En attente du patient...");
@@ -34,7 +34,7 @@ export default function ConsultationVideo({ route, navigation }) {
         setStatut("Connecté");
       }
 
-      // 2. Générer le token JaaS
+      //  Générer le token JaaS
       const res = await API.post(
         `/consultations/${consultationId}/video/token`,
         { role }
@@ -59,7 +59,7 @@ export default function ConsultationVideo({ route, navigation }) {
   }, [consultationId, role]);
 
   useEffect(() => {
-    // ✅ Vérifier les params avant d'initialiser
+    // Vérifier les params avant d'initialiser
     if (!consultationId || !role) {
       setError("Paramètres manquants (consultationId ou role)");
       setLoading(false);
@@ -87,7 +87,7 @@ export default function ConsultationVideo({ route, navigation }) {
     ]);
   }, [consultationId, navigation]);
 
-  // ✅ Toolbar JSON correctement encodé dans l'URL
+  // Toolbar JSON correctement encodé dans l'URL
   const toolbarButtons = encodeURIComponent(
     JSON.stringify(["microphone", "camera", "hangup", "tileview", "fullscreen"])
   );
@@ -103,7 +103,6 @@ export default function ConsultationVideo({ route, navigation }) {
       `&config.toolbarButtons=${toolbarButtons}`
     : null;
 
-  // ─── États d'affichage ───────────────────────────────────────────
 
   if (loading) {
     return (
@@ -133,7 +132,6 @@ export default function ConsultationVideo({ route, navigation }) {
     );
   }
 
-  // ─── Consultation vidéo ──────────────────────────────────────────
 
   return (
     <View style={styles.container}>
@@ -152,7 +150,6 @@ export default function ConsultationVideo({ route, navigation }) {
         setSupportMultipleWindows={false}
         mixedContentMode="always"
         thirdPartyCookiesEnabled={true}
-        // ✅ User-Agent adapté selon la plateforme
         userAgent={
           Platform.OS === "android"
             ? "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
@@ -161,13 +158,12 @@ export default function ConsultationVideo({ route, navigation }) {
         onShouldStartLoadWithRequest={() => true}
         onLoad={() => {
           setWebviewReady(true);
-          console.log("✅ JaaS chargé avec token");
+          console.log(" JaaS chargé avec token");
         }}
         onError={(e) => {
           console.error("[WebView error]", e.nativeEvent);
           setError("Impossible de charger la consultation vidéo");
         }}
-        // ✅ Gérer les erreurs HTTP (ex: 403 token invalide)
         onHttpError={(e) => {
           if (e.nativeEvent.statusCode >= 400) {
             console.error("[WebView HTTP error]", e.nativeEvent.statusCode);
@@ -176,7 +172,6 @@ export default function ConsultationVideo({ route, navigation }) {
         }}
       />
 
-      {/* ✅ TopBar par-dessus la WebView */}
       <View style={styles.topBar}>
         <View style={styles.statusBadge}>
           <View style={[styles.dot, {
