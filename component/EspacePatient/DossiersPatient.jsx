@@ -54,11 +54,8 @@ export default function DossiersPatient({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mon Dossier Médical</Text>
-        <Ionicons name="medical" size={24} color="#FFF" />
-      </View>
+    
+      
 
       <ScrollView
         refreshControl={

@@ -73,7 +73,6 @@ export const initPusher = async () => {
   }
 };
 
-// Le reste des fonctions (addConnectionListener, subscribeToChannel, etc.) reste identique
 export const addConnectionListener = (callback) => {
   statusListeners.push(callback);
   return () => {

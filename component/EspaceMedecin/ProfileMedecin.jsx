@@ -9,7 +9,6 @@ import API from "../../api/api";
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { confirmLogout } from "../../navigation/AppNavigate";
 import { subscribeToChannel, unsubscribeFromChannel } from '../../src/utils/Echo';
-import ConversationList from "../ConversationList";
 function NotificationsModal({
   visible, onClose, onClear,
   upcomingRendezVous, notificationsList,
@@ -116,14 +115,12 @@ export default function ProfileMedecin({ navigation }) {
     prenom: "", nom: "", email: "", telephone: "", adresse: "", age: "",
   });
 
-  // État pour les notifications
   const [notificationCount, setNotificationCount] = useState(0);
   const [notificationsList, setNotificationsList] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [upcomingRendezVous, setUpcomingRendezVous] = useState([]);
 
   const hasNotification = notificationCount > 0;
-  const [showConversations, setShowConversations] = useState(false);
 
   const fetchUser = async () => {
     try {
@@ -177,7 +174,6 @@ export default function ProfileMedecin({ navigation }) {
     }
   };
 
-  // Gestion des rendez-vous (notifications)
   const addNotification = useCallback((notification) => {
     setNotificationsList(prev => {
       if (prev.some(n => n.id === notification.id)) return prev;
@@ -292,7 +288,6 @@ export default function ProfileMedecin({ navigation }) {
     notificationInterval.current = setInterval(checkUpcomingRendezVousMedecin, 60000);
   }, [checkUpcomingRendezVousMedecin]);
 
-  // WebSocket (Pusher)
   useEffect(() => {
     let isMounted = true;
     const setupWebSocket = async () => {
@@ -336,7 +331,6 @@ export default function ProfileMedecin({ navigation }) {
     };
   }, []);
 
-  // Chargement initial + vérification périodique
   useEffect(() => {
     const loadData = async () => {
       await fetchUser();
@@ -462,7 +456,8 @@ export default function ProfileMedecin({ navigation }) {
           </View>
         </View>
       </Modal>
-     <Modal visible={showConversations} animationType="slide" transparent={false} onRequestClose={() => setShowConversations(false)}>
+     
+    {/*/<Modal visible={showConversations} animationType="slide" transparent={false} onRequestClose={() => setShowConversations(false)}>
   <View style={{ flex: 1, backgroundColor: "#F5F7FA" }}>
     <View style={styles.modalHeader}>
       <TouchableOpacity onPress={() => setShowConversations(false)}>
@@ -490,7 +485,7 @@ export default function ProfileMedecin({ navigation }) {
       }}
     />
   </View>
-</Modal>
+</Modal>*/}
 
       <ScrollView
         contentContainerStyle={styles.container}
@@ -499,12 +494,25 @@ export default function ProfileMedecin({ navigation }) {
       >
         <View style={[styles.header, { backgroundColor: "#10B981" }]}>
           <View style={styles.headerContent}>
-            <TouchableOpacity style={styles.notificationIconBtn} onPress={() => setShowConversations(true)}>
-  <Ionicons name="chatbubbles-outline" size={24} color="#FFF" />
-</TouchableOpacity>
+             <TouchableOpacity
+              style={styles.backButton}
+              onPress={() =>{
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Accueil');
+    }
+  }} >
+    
+              <Ionicons name="arrow-back-outline" size={24} color="#FFF" />
+            </TouchableOpacity>
+           
             <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer()}>
               <Ionicons name="menu" size={24} color="#FFF" />
             </TouchableOpacity>
+            <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
+                <Ionicons name="create-outline" size={24} color="#FFF" />
+              </TouchableOpacity>
             <Text style={styles.headerTitle}>Mon Profil</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
               <TouchableOpacity style={styles.notificationIconBtn} onPress={() => setShowNotifications(true)}>
@@ -515,9 +523,16 @@ export default function ProfileMedecin({ navigation }) {
                   </View>
                 )}
               </TouchableOpacity>
-              <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
-                <Ionicons name="create-outline" size={24} color="#FFF" />
-              </TouchableOpacity>
+               <TouchableOpacity
+  style={styles.notificationIconBtn}
+  onPress={() => navigation.navigate("ConversationList", {
+    currentUserId: user.id,
+    currentUser: user,
+  })}
+>
+  <Ionicons name="chatbubbles-outline" size={24} color="#FFF" />
+</TouchableOpacity>
+              
             </View>
           </View>
         </View>
@@ -568,7 +583,7 @@ export default function ProfileMedecin({ navigation }) {
             <Ionicons name="create-outline" size={20} color="#FFF" />
             <Text style={styles.actionButtonText}>Modifier</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, styles.settingsButton]} onPress={() => Alert.alert("Info", "Paramètres - À venir")}>
+          <TouchableOpacity style={[styles.actionButton, styles.settingsButton]} onPress={() => navigation.openDrawer()}>
             <Ionicons name="settings-outline" size={20} color="#FFF" />
             <Text style={styles.actionButtonText}>Paramètres</Text>
           </TouchableOpacity>
@@ -579,7 +594,6 @@ export default function ProfileMedecin({ navigation }) {
           <Text style={styles.logoutButtonText}>Se déconnecter</Text>
         </TouchableOpacity>
 
-        <Text style={styles.versionText}>Version 1.0.0</Text>
       </ScrollView>
     </>
   );

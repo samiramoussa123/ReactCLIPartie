@@ -184,10 +184,18 @@ export default function DossiersMedecin({ navigation }) {
     );
   }
 
+   const goBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('ProfilMedecin');
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+         <TouchableOpacity onPress={goBack} style={styles.backButton}>
+                    <Ionicons name="arrow-back-outline" size={24} color="#FFFFFF" />
+                  </TouchableOpacity>
         <Text style={styles.headerTitle}>Dossiers Médicaux</Text>
         <TouchableOpacity style={styles.addBtn} onPress={ouvrirModal}>
           <Ionicons name="add" size={24} color="#FFF" />

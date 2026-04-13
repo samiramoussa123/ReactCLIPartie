@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useContext } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Alert, ActivityIndicator, RefreshControl, Modal, TextInput,
@@ -6,14 +6,16 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from "react-native-vector-icons/Ionicons";
 import API from "../../api/api";
+import { RendezVousCountContext } from "../../App"; 
 
 export default function GestionRendezVous({ navigation }) {
+  const { setCount } = useContext(RendezVousCountContext);
+
   const [rendezvous, setRendezVous]   = useState([]);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
   const [idMedecin, setIdMedecin]     = useState(null);
 
-  // Modal consultation
   const [modalVisible, setModalVisible]         = useState(false);
   const [rdvSelectionne, setRdvSelectionne]     = useState(null);
   const [dossierRdv, setDossierRdv]             = useState(null);
@@ -25,16 +27,16 @@ export default function GestionRendezVous({ navigation }) {
   const [saving, setSaving]         = useState(false);
   const [loadingConsult, setLoadingConsult] = useState(false);
 
- const getPatientName = (rdv) => {
-  if (rdv.patient_nom_complet && rdv.patient_nom_complet !== 'Patient inconnu')
-    return rdv.patient_nom_complet;
-  if (rdv.patient_prenom && rdv.patient_nom)
-    return `${rdv.patient_prenom} ${rdv.patient_nom}`;
-  if (rdv.patient?.user?.prenom && rdv.patient?.user?.nom)
-    return `${rdv.patient.user.prenom} ${rdv.patient.user.nom}`;
-  if (rdv.patient?.nom) return rdv.patient.nom;
-  return "Patient";
-};
+  const getPatientName = (rdv) => {
+    if (rdv.patient_nom_complet && rdv.patient_nom_complet !== 'Patient inconnu')
+      return rdv.patient_nom_complet;
+    if (rdv.patient_prenom && rdv.patient_nom)
+      return `${rdv.patient_prenom} ${rdv.patient_nom}`;
+    if (rdv.patient?.user?.prenom && rdv.patient?.user?.nom)
+      return `${rdv.patient.user.prenom} ${rdv.patient.user.nom}`;
+    if (rdv.patient?.nom) return rdv.patient.nom;
+    return "Patient";
+  };
 
   useEffect(() => { chargerMedecin(); }, []);
 
@@ -52,24 +54,27 @@ export default function GestionRendezVous({ navigation }) {
     }
   };
 
-  const chargerRendezVous = async (id) => {
-    try {
-      const response = await API.get(`/rendezvous/medecin/${id}`);
-      const rdvList = response.data?.rendez_vous ?? response.data?.data ?? response.data ?? [];
-      setRendezVous(Array.isArray(rdvList) ? rdvList : []);
-    } catch (error) {
-      console.error("[GestionRDV] Chargement:", error.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+const chargerRendezVous = async (id) => {
+  try {
+    const response = await API.get(`/rendezvous/medecin/${id}`);
+    const rdvList = response.data?.rendez_vous ?? response.data?.data ?? response.data ?? [];
+    const list = Array.isArray(rdvList) ? rdvList : [];
+    const filteredList = list.filter(rdv => rdv.etat === "en attend" || rdv.etat === "confirmé");
+    setRendezVous(filteredList);
+    setCount(filteredList.length);
+  } catch (error) {
+    console.error("[GestionRDV] Chargement:", error.message);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
   const changerEtat = async (rdvId, etat) => {
     try {
       await API.patch(`/rendezvous/${rdvId}/medecin/${idMedecin}/etat`, { etat });
       Alert.alert("Succès", `Rendez-vous ${etat}`);
-      chargerRendezVous(idMedecin);
+      chargerRendezVous(idMedecin); 
     } catch (error) {
       Alert.alert("Erreur", "Impossible de modifier l'état");
     }
@@ -165,6 +170,7 @@ export default function GestionRendezVous({ navigation }) {
             await API.delete(`/consultations/${consultationExistante.id}`);
             Alert.alert("Succès", "Consultation supprimée");
             setModalVisible(false);
+            chargerRendezVous(idMedecin); 
           } catch (e) {
             Alert.alert("Erreur", "Impossible de supprimer");
           }
@@ -172,6 +178,7 @@ export default function GestionRendezVous({ navigation }) {
       }
     ]);
   };
+
 
   const demarrerVideo = async (rdv) => {
     try {
@@ -244,12 +251,7 @@ export default function GestionRendezVous({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mes Rendez-vous</Text>
-        <View style={styles.headerBadge}>
-          <Text style={styles.headerBadgeText}>{rendezvous.length}</Text>
-        </View>
-      </View>
+     
 
       <ScrollView
         refreshControl={
@@ -320,6 +322,7 @@ export default function GestionRendezVous({ navigation }) {
                   </TouchableOpacity>
                 </View>
               )}
+            
             </View>
           ))
         )}
@@ -476,7 +479,7 @@ const styles = StyleSheet.create({
   motifRow:    { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
   motifText:   { fontSize: 13, color: "#64748B", flex: 1 },
   divider:     { height: 1, backgroundColor: "#F1F5F9", marginVertical: 12 },
-
+deleteBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#EF4444", padding: 10, borderRadius: 10 },
   actionRow:   { flexDirection: "row", gap: 10 },
   confirmBtn:  { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#10B981", padding: 10, borderRadius: 10 },
   refuseBtn:   { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#EF4444", padding: 10, borderRadius: 10 },

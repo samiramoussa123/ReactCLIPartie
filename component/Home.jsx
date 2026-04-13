@@ -28,6 +28,27 @@ export default function Home({ navigation }) {
   ]);
   const [scrollY] = useState(new Animated.Value(0));
 
+  const isAuthenticated = async () => {
+    const token = await AsyncStorage.getItem("token");
+    return !!token;
+  };
+
+  const requireAuth = async (callback) => {
+    const token = await AsyncStorage.getItem("token");
+    if (token) {
+      callback();
+    } else {
+      Alert.alert(
+        "Connexion requise",
+        "Veuillez vous connecter pour accéder à cette fonctionnalité.",
+        [
+          { text: "Annuler", style: "cancel" },
+          { text: "Se connecter", onPress: () => navigation.navigate("Login") }
+        ]
+      );
+    }
+  };
+
   const features = [
     {
       id: 1,
@@ -35,7 +56,8 @@ export default function Home({ navigation }) {
       description: "Décrivez vos symptômes pour obtenir une analyse préliminaire",
       icon: "medkit-outline",
       color: "#3B82F6",
-      screen: "Symptomes" 
+      screen: "Symptomes",
+      needAuth: false
     },
     {
       id: 2,
@@ -43,7 +65,8 @@ export default function Home({ navigation }) {
       description: "Suivez vos constantes et votre historique médical",
       icon: "heart-outline",
       color: "#10B981",
-      screen: "Main" 
+      screen: "DossiersPatient",
+      needAuth: true
     },
     {
       id: 3,
@@ -51,7 +74,8 @@ export default function Home({ navigation }) {
       description: "Recevez des recommandations adaptées à votre profil",
       icon: "bulb-outline",
       color: "#F59E0B",
-      screen: "Main" 
+      screen: "ConversationList",
+      needAuth: true
     },
     {
       id: 4,
@@ -59,7 +83,8 @@ export default function Home({ navigation }) {
       description: "Contactez un professionnel de santé",
       icon: "videocam-outline",
       color: "#8B5CF6",
-      screen: "Main" 
+      screen: "RendezVous",
+      needAuth: true
     }
   ];
 
@@ -173,7 +198,6 @@ export default function Home({ navigation }) {
     loadData(); 
   }, []);
 
-  // Effet pour les notifications Pusher
   useEffect(() => {
     let isMounted = true;
     let channelName = null;
@@ -220,65 +244,133 @@ export default function Home({ navigation }) {
     };
   }, []);
 
-const navigateToProfile = async () => {
-  try {
-    const userData = await AsyncStorage.getItem("userData");
-    const token = await AsyncStorage.getItem("token");
-    
-    if (!userData || !token) {
-      navigation.navigate("Login");
-      return;
-    }
-    
-    const user = JSON.parse(userData);
-    
-    if (user.role === "medecin") {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Medecin" }],
-      });
-    } else if (user.role === "admin") {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Admin" }],
-      });
-    } else if (user.role === "patient") {
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: "Main",
-            state: {
-              routes: [
-                { name: "Profile" }
-              ],
+  const navigateToProfile = async () => {
+    try {
+      const userData = await AsyncStorage.getItem("userData");
+      const token = await AsyncStorage.getItem("token");
+      
+      if (!userData || !token) {
+        navigation.navigate("Login");
+        return;
+      }
+      
+      const user = JSON.parse(userData);
+      
+      if (user.role === "medecin") {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Medecin" }],
+        });
+      } else if (user.role === "admin") {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Admin" }],
+        });
+      } else if (user.role === "patient") {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: "Main",
+              state: {
+                routes: [
+                  { name: "Profile" }
+                ],
+              },
             },
-          },
-        ],
-      });
-    } else {
+          ],
+        });
+      } else {
+        navigation.navigate("Login");
+      }
+      
+    } catch (error) {
+      console.error("Erreur navigation:", error);
       navigation.navigate("Login");
-    }
-    
-  } catch (error) {
-    console.error("Erreur navigation:", error);
-    navigation.navigate("Login");
-  }
-};
-  const handleAppointment = (doctor) => {
-    if (doctor.disponible) {
-      Alert.alert(
-        "Rendez-vous",
-        `Voulez-vous prendre rendez-vous avec ${doctor.nom} ?`,
-        [
-          { text: "Annuler", style: "cancel" },
-          { text: "Confirmer", onPress: () => navigation.navigate("RendezVousStack", { doctorId: doctor.id, doctorName: doctor.nom }) },
-        ]
-      );
-    } else {
-      Alert.alert("Non disponible", "Ce médecin n'est pas disponible pour le moment");
     }
   };
+
+  const handleAppointment = async (doctor) => {
+    if (!doctor.disponible) {
+      Alert.alert("Non disponible", "Ce médecin n'est pas disponible pour le moment");
+      return;
+    }
+
+    const token = await AsyncStorage.getItem("token");
+    if (!token) {
+      Alert.alert(
+        "Connexion requise",
+        "Veuillez vous connecter pour prendre un rendez-vous.",
+        [
+          { text: "Annuler", style: "cancel" },
+          { text: "Se connecter", onPress: () => navigation.navigate("Login") }
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Rendez-vous",
+      `Voulez-vous prendre rendez-vous avec ${doctor.nom} ?`,
+      [
+        { text: "Annuler", style: "cancel" },
+        { text: "Confirmer", onPress: () => navigation.navigate("RendezVousStack", { doctorId: doctor.id, doctorName: doctor.nom }) },
+      ]
+    );
+  };
+
+  const handleFeaturePress = async (feature) => {
+  if (feature.needAuth) {
+    const token = await AsyncStorage.getItem("token");
+    if (!token) {
+      Alert.alert(
+        "Connexion requise",
+        "Veuillez vous connecter pour accéder à cette fonctionnalité.",
+        [
+          { text: "Annuler", style: "cancel" },
+          { text: "Se connecter", onPress: () => navigation.navigate("Login") }
+        ]
+      );
+      return;
+    }
+    if (feature.screen === "RendezVous") {
+      const userData = await AsyncStorage.getItem("userData");
+      let role = null;
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          role = user.role;
+        } catch (e) {}
+      }
+      if (role === "medecin") {
+        navigation.navigate("GestionRendezVous");
+      } else {
+        navigation.navigate("RendezVous");
+      }
+    }
+    if (feature.screen === "DossiersPatient") {
+      const userData = await AsyncStorage.getItem("userData");
+      let role = null;
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          role = user.role;
+        } catch (e) {}
+      }
+      if (role === "medecin") {
+        navigation.navigate("DossiersMedecin");
+      } else {
+        navigation.navigate("DossiersPatient");
+      }
+    }
+    
+    else {
+      navigation.navigate(feature.screen);
+    }
+  } else {
+    navigation.navigate(feature.screen);
+  }
+};
 
   const filteredDoctors = doctors.filter(doctor => {
     const searchLower = searchQuery.toLowerCase().trim();
@@ -554,20 +646,7 @@ const navigateToProfile = async () => {
             <TouchableOpacity
               key={feature.id}
               style={styles.featureCard}
-              onPress={() => {
-                if (feature.screen === "Symptomes") {
-                  navigation.navigate("Symptomes");
-                } else {
-                  Alert.alert(
-                    "Connexion requise",
-                    "Veuillez vous connecter pour accéder à cette fonctionnalité",
-                    [
-                      { text: "Annuler", style: "cancel" },
-                      { text: "Se connecter", onPress: () => navigation.navigate("Login") }
-                    ]
-                  );
-                }
-              }}
+              onPress={() => handleFeaturePress(feature)}
               activeOpacity={0.7}
             >
               <View style={[styles.featureIcon, { backgroundColor: `${feature.color}15` }]}>
@@ -625,6 +704,7 @@ const navigateToProfile = async () => {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   

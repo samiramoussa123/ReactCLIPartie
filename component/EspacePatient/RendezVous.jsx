@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, ActivityIndicator, Platform,
+  Alert, ActivityIndicator, Platform, Modal   // ← Modal ajouté ici
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import API from "../../api/api";
@@ -22,7 +22,9 @@ export default function RendezVous({ route, navigation }) {
   const [loading, setLoading]                         = useState(false);
   const [onglet, setOnglet]                           = useState(ongletInitial);
   const [highlightedRdvId, setHighlightedRdvId]       = useState(null);
-
+  const [showHeureModal, setShowHeureModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [heuresDisponibles, setHeuresDisponibles] = useState([]);
   const scrollViewRef = useRef(null);
   const rdvItemRefs   = useRef({});
 
@@ -140,21 +142,9 @@ export default function RendezVous({ route, navigation }) {
     if (!jour.estDisponible || jour.estPasse) return;
     const heures = jour.heuresDisponibles || [];
     if (!heures.length) return;
-
-    if (Platform.OS !== "web") {
-      Alert.alert(
-        "Choisir l'heure",
-        `Choisissez une heure pour le ${jour.date}`,
-        [
-          ...heures.map(h => ({ text: h, onPress: () => confirmerRendezVous(jour.date, h) })),
-          { text: "Annuler", style: "cancel" },
-        ]
-      );
-    } else {
-      const heure = window.prompt(`Choisir une heure:\n${heures.join(" | ")}`);
-      if (heure && heures.includes(heure)) confirmerRendezVous(jour.date, heure);
-      else if (heure) window.alert("Heure invalide ❌");
-    }
+    setSelectedDate(jour.date);
+    setHeuresDisponibles(heures);
+    setShowHeureModal(true);
   };
 
   const confirmerRendezVous = async (date, heure) => {
@@ -239,14 +229,6 @@ export default function RendezVous({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      {idMedecin && (
-        <View style={styles.medecinBanner}>
-          <Text style={styles.medecinBannerText}>
-            Dr. {nomMedecin}{specialite ? ` — ${specialite}` : ""}
-          </Text>
-        </View>
-      )}
-
       <View style={styles.onglets}>
         {idMedecin && (
           <TouchableOpacity
@@ -261,8 +243,8 @@ export default function RendezVous({ route, navigation }) {
           style={[styles.onglet, onglet === "mesrdv" && styles.ongletActif]}
           onPress={() => setOnglet("mesrdv")}
         >
-          <Ionicons name="list-outline" size={16} color={onglet === "mesrdv" ? "#FFF" : "#64748B"} />
-          <Text style={[styles.ongletText, onglet === "mesrdv" && styles.ongletTextActif]}>Mes RDV</Text>
+          <Ionicons name="calendar-outline" size={16} color={onglet === "mesrdv" ? "#FFF" : "#64748B"} />
+          <Text style={[styles.ongletText, onglet === "mesrdv" && styles.ongletTextActif]}>Mes Rendez-Vous</Text>
         </TouchableOpacity>
       </View>
 
@@ -349,6 +331,40 @@ export default function RendezVous({ route, navigation }) {
           )}
         </ScrollView>
       )}
+
+      <Modal
+        visible={showHeureModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowHeureModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Choisir une heure</Text>
+            <Text style={styles.modalSubtitle}>pour le {selectedDate}</Text>
+            <ScrollView style={styles.heureList}>
+              {heuresDisponibles.map((heure) => (
+                <TouchableOpacity
+                  key={heure}
+                  style={styles.heureItem}
+                  onPress={() => {
+                    setShowHeureModal(false);
+                    confirmerRendezVous(selectedDate, heure);
+                  }}
+                >
+                  <Text style={styles.heureText}>{heure}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowHeureModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -362,9 +378,63 @@ const styles = StyleSheet.create({
   medecinBanner:     { backgroundColor: "#4CAF50", padding: 12, alignItems: "center" },
   medecinBannerText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    maxHeight: '70%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 15,
+  },
+  heureList: {
+    width: '100%',
+    marginBottom: 15,
+  },
+  heureItem: {
+    backgroundColor: '#f0f0f0',
+    padding: 12,
+    borderRadius: 10,
+    marginVertical: 5,
+    alignItems: 'center',
+  },
+  heureText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  cancelButton: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+
   onglets:         { flexDirection: "row", backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },
   onglet:          { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12 },
-  ongletActif:     { backgroundColor: "#4CAF50" },
+  ongletActif:     { backgroundColor: "#119213" },
   ongletText:      { fontSize: 14, fontWeight: "600", color: "#64748B" },
   ongletTextActif: { color: "#FFF" },
 

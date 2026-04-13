@@ -5,9 +5,10 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import API from "../../api/api";
-import DateInput from "../common/DateInput";
+import DateInput from "../common/DateInput"; 
+
 export default function DetailDossier({ route, navigation }) {
-const { dossier: initialDossier, idMedecin } = route.params;
+  const { dossier: initialDossier, idMedecin } = route.params;
 
   const [dossier, setDossier]       = useState(initialDossier);
   const [maladies, setMaladies]     = useState([]);
@@ -68,7 +69,7 @@ const { dossier: initialDossier, idMedecin } = route.params;
     try {
       const medecinId = initialDossier.medecin_id ?? idMedecin;
       if (!medecinId) return;
-      const res      = await API.get(`/dossiers/medecin/${medecinId}/patient`);//patient verifier
+      const res      = await API.get(`/dossiers/medecin/${medecinId}/patient`); // vérifier l'endpoint
       const patients = res.data?.patients ?? [];
       const patientId = initialDossier.patient_id ?? initialDossier.patient?.id;
       const found    = patients.find(p => p.patient_id === patientId);
@@ -99,9 +100,6 @@ const { dossier: initialDossier, idMedecin } = route.params;
     if (!nomMaladie.trim()) { Alert.alert("Erreur", "Nom de la maladie requis"); return; }
     if (!dateDiag.trim())   { Alert.alert("Erreur", "Date de diagnostic requise (YYYY-MM-DD)"); return; }
 
-  
-  
-
     setSaving(true);
     try {
       const payload = {
@@ -117,7 +115,7 @@ const { dossier: initialDossier, idMedecin } = route.params;
       }
 
       setModalMaladie(false);
-      await chargerMaladies(); //  Recharger après modification
+      await chargerMaladies();
       Alert.alert("Succès", editMaladie ? "Maladie modifiée ✓" : "Maladie ajoutée ✓");
     } catch (e) {
       Alert.alert("Erreur", e.response?.data?.message ?? "Impossible de sauvegarder");
@@ -134,7 +132,7 @@ const { dossier: initialDossier, idMedecin } = route.params;
         onPress: async () => {
           try {
             await API.delete(`/maladies/${id}`);
-            await chargerMaladies(); //  
+            await chargerMaladies();
           } catch {
             Alert.alert("Erreur", "Impossible de supprimer");
           }
@@ -143,8 +141,18 @@ const { dossier: initialDossier, idMedecin } = route.params;
     ]);
   };
 
+  // Affichage
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#10B981" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
+      {/* Header avec bouton retour */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="#FFF" />
@@ -155,6 +163,7 @@ const { dossier: initialDossier, idMedecin } = route.params;
         </View>
       </View>
 
+      {/* Carte patient */}
       <View style={styles.patientCard}>
         <View style={styles.patientAvatar}>
           <Text style={styles.patientAvatarText}>
@@ -190,7 +199,7 @@ const { dossier: initialDossier, idMedecin } = route.params;
         </View>
       </View>
 
-      {/* ── Stats ── */}
+      {/* Statistiques */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={styles.statNum}>{maladies.length}</Text>
@@ -206,7 +215,7 @@ const { dossier: initialDossier, idMedecin } = route.params;
         </View>
       </View>
 
-      {/* ── Onglets ── */}
+      {/* Onglets */}
       <View style={styles.onglets}>
         <TouchableOpacity
           style={[styles.onglet, onglet === "maladies" && styles.ongletActif]}
@@ -228,149 +237,136 @@ const { dossier: initialDossier, idMedecin } = route.params;
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#10B981" />
-        </View>
-      ) : (
-        <ScrollView
-          style={{ flex: 1 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); chargerTout(); }}
-              colors={["#10B981"]}
-            />
-          }
-        >
-          {/* ── Onglet Maladies ── */}
-          {onglet === "maladies" && (
-            <View style={styles.section}>
-              <TouchableOpacity style={styles.addBtn} onPress={() => ouvrirModalMaladie()}>
-                <Ionicons name="add-circle-outline" size={20} color="#10B981" />
-                <Text style={styles.addBtnText}>Ajouter une maladie</Text>
-              </TouchableOpacity>
+      {/* Contenu principal */}
+      <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); chargerTout(); }}
+            colors={["#10B981"]}
+          />
+        }
+      >
+        {onglet === "maladies" && (
+          <View style={styles.section}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => ouvrirModalMaladie()}>
+              <Ionicons name="add-circle-outline" size={20} color="#10B981" />
+              <Text style={styles.addBtnText}>Ajouter une maladie</Text>
+            </TouchableOpacity>
 
-              {maladies.length === 0 ? (
-                <View style={styles.empty}>
-                  <Ionicons name="medical-outline" size={50} color="#CBD5E1" />
-                  <Text style={styles.emptyText}>Aucune maladie enregistrée</Text>
-                </View>
-              ) : (
-                maladies.map((m) => (
-                  <View key={m.id} style={styles.maladieCard}>
-                    <View style={styles.maladieLeft}>
-                      <View style={styles.maladieIcon}>
-                        <Ionicons name="medical" size={18} color="#EF4444" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.maladieNom}>{m.nom_maladie}</Text>
-                        <Text style={styles.maladieDate}>
-                          Diagnostiqué le {new Date(m.date_diagnostic).toLocaleDateString("fr-FR")}
-                        </Text>
-                      </View>
+            {maladies.length === 0 ? (
+              <View style={styles.empty}>
+                <Ionicons name="medical-outline" size={50} color="#CBD5E1" />
+                <Text style={styles.emptyText}>Aucune maladie enregistrée</Text>
+              </View>
+            ) : (
+              maladies.map((m) => (
+                <View key={m.id} style={styles.maladieCard}>
+                  <View style={styles.maladieLeft}>
+                    <View style={styles.maladieIcon}>
+                      <Ionicons name="medical" size={18} color="#EF4444" />
                     </View>
-                    <View style={styles.maladieActions}>
-                      <TouchableOpacity onPress={() => ouvrirModalMaladie(m)}>
-                        <Ionicons name="pencil-outline" size={20} color="#3B82F6" />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => supprimerMaladie(m.id)} style={{ marginTop: 8 }}>
-                        <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              )}
-            </View>
-          )}
-
-          {/* ── Onglet Consultations ── */}
-          {onglet === "consultations" && (
-            <View style={styles.section}>
-              {consultations.length === 0 ? (
-                <View style={styles.empty}>
-                  <Ionicons name="document-text-outline" size={50} color="#CBD5E1" />
-                  <Text style={styles.emptyText}>Aucune consultation</Text>
-                  <Text style={styles.emptySubText}>
-                    Les consultations apparaissent après un rendez-vous confirmé
-                  </Text>
-                </View>
-              ) : (
-                consultations.map((c) => (
-                  <View key={c.id} style={styles.consultCard}>
-                    {/* Type + Date */}
-                    <View style={styles.consultHeader}>
-                      <View style={[
-                        styles.typeBadge,
-                        { backgroundColor: c.type === "video" ? "#EFF6FF" : "#F0FDF4" }
-                      ]}>
-                        <Ionicons
-                          name={c.type === "video" ? "videocam-outline" : "person-outline"}
-                          size={14}
-                          color={c.type === "video" ? "#3B82F6" : "#10B981"}
-                        />
-                        <Text style={[
-                          styles.typeText,
-                          { color: c.type === "video" ? "#3B82F6" : "#10B981" }
-                        ]}>
-                          {c.type === "video" ? "Vidéo" : "Présentiel"}
-                        </Text>
-                      </View>
-                      <Text style={styles.consultDate}>
-                        {new Date(c.date_consultation).toLocaleDateString("fr-FR")}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.maladieNom}>{m.nom_maladie}</Text>
+                      <Text style={styles.maladieDate}>
+                        Diagnostiqué le {new Date(m.date_diagnostic).toLocaleDateString("fr-FR")}
                       </Text>
                     </View>
-
-                    {/* Diagnostic */}
-                    {c.diagnostique ? (
-                      <View style={styles.consultSection}>
-                        <View style={styles.consultSectionHeader}>
-                          <Ionicons name="clipboard-outline" size={14} color="#8B5CF6" />
-                          <Text style={styles.consultLabel}>Diagnostic</Text>
-                        </View>
-                        <Text style={styles.consultValue}>{c.diagnostique}</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.consultSection}>
-                        <Text style={styles.consultEmpty}>Aucun diagnostic enregistré</Text>
-                      </View>
-                    )}
-
-                    {/* Traitement */}
-                    {c.traitement ? (
-                      <View style={styles.consultSection}>
-                        <View style={styles.consultSectionHeader}>
-                          <Ionicons name="fitness-outline" size={14} color="#10B981" />
-                          <Text style={styles.consultLabel}>Traitement</Text>
-                        </View>
-                        <Text style={styles.consultValue}>{c.traitement}</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.consultSection}>
-                        <Text style={styles.consultEmpty}>Aucun traitement enregistré</Text>
-                      </View>
-                    )}
-
-                    {/* Statut vidéo si applicable */}
-                    {c.type === "video" && c.statut_video && (
-                      <View style={styles.statutBadge}>
-                        <Text style={styles.statutText}>
-                          {c.statut_video === "terminee" ? "✓ Terminée" :
-                           c.statut_video === "en_cours" ? "🔴 En cours" : "⏳ En attente"}
-                        </Text>
-                      </View>
-                    )}
                   </View>
-                ))
-              )}
-            </View>
-          )}
+                  <View style={styles.maladieActions}>
+                    <TouchableOpacity onPress={() => ouvrirModalMaladie(m)}>
+                      <Ionicons name="pencil-outline" size={20} color="#3B82F6" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => supprimerMaladie(m.id)} style={{ marginTop: 8 }}>
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        )}
 
-          <View style={{ height: 30 }} />
-        </ScrollView>
-      )}
+        {onglet === "consultations" && (
+          <View style={styles.section}>
+            {consultations.length === 0 ? (
+              <View style={styles.empty}>
+                <Ionicons name="document-text-outline" size={50} color="#CBD5E1" />
+                <Text style={styles.emptyText}>Aucune consultation</Text>
+                <Text style={styles.emptySubText}>
+                  Les consultations apparaissent après un rendez-vous confirmé
+                </Text>
+              </View>
+            ) : (
+              consultations.map((c) => (
+                <View key={c.id} style={styles.consultCard}>
+                  <View style={styles.consultHeader}>
+                    <View style={[
+                      styles.typeBadge,
+                      { backgroundColor: c.type === "video" ? "#EFF6FF" : "#F0FDF4" }
+                    ]}>
+                      <Ionicons
+                        name={c.type === "video" ? "videocam-outline" : "person-outline"}
+                        size={14}
+                        color={c.type === "video" ? "#3B82F6" : "#10B981"}
+                      />
+                      <Text style={[
+                        styles.typeText,
+                        { color: c.type === "video" ? "#3B82F6" : "#10B981" }
+                      ]}>
+                        {c.type === "video" ? "Vidéo" : "Présentiel"}
+                      </Text>
+                    </View>
+                    <Text style={styles.consultDate}>
+                      {new Date(c.date_consultation).toLocaleDateString("fr-FR")}
+                    </Text>
+                  </View>
 
-      {/* ── Modal Maladie ── */}
+                  {c.diagnostique ? (
+                    <View style={styles.consultSection}>
+                      <View style={styles.consultSectionHeader}>
+                        <Ionicons name="clipboard-outline" size={14} color="#8B5CF6" />
+                        <Text style={styles.consultLabel}>Diagnostic</Text>
+                      </View>
+                      <Text style={styles.consultValue}>{c.diagnostique}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.consultSection}>
+                      <Text style={styles.consultEmpty}>Aucun diagnostic enregistré</Text>
+                    </View>
+                  )}
+
+                  {c.traitement ? (
+                    <View style={styles.consultSection}>
+                      <View style={styles.consultSectionHeader}>
+                        <Ionicons name="fitness-outline" size={14} color="#10B981" />
+                        <Text style={styles.consultLabel}>Traitement</Text>
+                      </View>
+                      <Text style={styles.consultValue}>{c.traitement}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.consultSection}>
+                      <Text style={styles.consultEmpty}>Aucun traitement enregistré</Text>
+                    </View>
+                  )}
+
+                  {c.type === "video" && c.statut_video && (
+                    <View style={styles.statutBadge}>
+                      <Text style={styles.statutText}>
+                        {c.statut_video === "terminee" ? "✓ Terminée" :
+                         c.statut_video === "en_cours" ? "🔴 En cours" : "⏳ En attente"}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))
+            )}
+          </View>
+        )}
+        <View style={{ height: 30 }} />
+      </ScrollView>
+
+      {/* Modal d’ajout/édition maladie */}
       <Modal visible={modalMaladie} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -393,11 +389,11 @@ const { dossier: initialDossier, idMedecin } = route.params;
             />
 
             <Text style={styles.inputLabel}>Date de diagnostic</Text>
-
-<DateInput
-  value={dateDiag}
-  onChange={(date) => setDateDiag(date)}
-/>
+            {/* Si le composant DateInput n’existe pas, remplacez-le par un TextInput normal */}
+            <DateInput
+              value={dateDiag}
+              onChange={(date) => setDateDiag(date)}
+            />
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalMaladie(false)}>

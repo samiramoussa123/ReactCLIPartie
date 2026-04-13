@@ -20,12 +20,10 @@ export default function ConsultationVideo({ route, navigation }) {
   const [webviewReady, setWebviewReady] = useState(false);
   const [error, setError]             = useState(null);
 
-  // pour éviter le re-création à chaque render
   const init = useCallback(async () => {
     try {
       setError(null);
 
-      //  Démarrer ou rejoindre selon le rôle
       if (role === "medecin") {
         await API.post(`/consultations/${consultationId}/video/demarrer`);
         setStatut("En attente du patient...");
@@ -34,7 +32,6 @@ export default function ConsultationVideo({ route, navigation }) {
         setStatut("Connecté");
       }
 
-      //  Générer le token JaaS
       const res = await API.post(
         `/consultations/${consultationId}/video/token`,
         { role }
@@ -59,7 +56,6 @@ export default function ConsultationVideo({ route, navigation }) {
   }, [consultationId, role]);
 
   useEffect(() => {
-    // Vérifier les params avant d'initialiser
     if (!consultationId || !role) {
       setError("Paramètres manquants (consultationId ou role)");
       setLoading(false);
@@ -87,7 +83,6 @@ export default function ConsultationVideo({ route, navigation }) {
     ]);
   }, [consultationId, navigation]);
 
-  // Toolbar JSON correctement encodé dans l'URL
   const toolbarButtons = encodeURIComponent(
     JSON.stringify(["microphone", "camera", "hangup", "tileview", "fullscreen"])
   );

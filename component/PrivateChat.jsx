@@ -21,16 +21,18 @@ export default function PrivateChat({ navigation }) {
 
   // Vérification de sécurité
   if (!otherUser || !otherUser.id) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>Conversation invalide</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>Retour</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
+  return (
+    <View style={styles.loadingContainer}>
+      <Text style={styles.errorText}>Conversation invalide</Text>
+      <TouchableOpacity 
+        onPress={() => navigation.goBack()}  // ← ici
+        style={styles.backButton}
+      >
+        <Text style={styles.backButtonText}>Retour</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
@@ -183,7 +185,7 @@ export default function PrivateChat({ navigation }) {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+<TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <View style={styles.avatar}>
@@ -194,7 +196,6 @@ export default function PrivateChat({ navigation }) {
         <View style={styles.headerInfo}>
           <Text style={styles.userName}>{otherUser.name}</Text>
           <Text style={styles.chatType}>
-            Conversation privée et sécurisée
           </Text>
         </View>
       </View>

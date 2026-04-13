@@ -42,11 +42,15 @@ export default function DetailleMedecin({ route, navigation }) {
 
     console.log("Navigation RDV → medecin_id:", rdvMedecinId, "user_id:", id);
 
-    navigation.navigate("RendezVousStack", {
-      idMedecin:  rdvMedecinId,  
-      nomMedecin: displayName,
-      specialite: specialite,
-    });
+    navigation.navigate("Main", {
+  screen: "RendezVous",
+  params: {
+    idMedecin:     rdvMedecinId,
+    nomMedecin:    displayName,
+    specialite:    specialite,
+    ongletInitial: "calendrier",
+  },
+});
   };
 
   return (

@@ -91,9 +91,7 @@ onPress={() => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Messages</Text>
-      </View>
+      
       <FlatList
         data={conversations}
         keyExtractor={(item) => item.user_id.toString()}

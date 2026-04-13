@@ -11,9 +11,7 @@ import { confirmLogout } from "../../navigation/AppNavigate";
 import { subscribeToChannel, unsubscribeFromChannel } from '../../src/utils/Echo';
 import ConversationList from "../ConversationList";
 import { DrawerActions } from '@react-navigation/native';
-// ============================================================
-// Fonction utilitaire pour extraire le nom du médecin depuis donnees_json
-// ============================================================
+
 const getMedecinName = (rdv) => {
   if (rdv.medecin?.donnees_json) {
     try {
@@ -31,9 +29,6 @@ const getMedecinName = (rdv) => {
   return "un médecin";
 };
 
-// ============================================================
-// Composant modal des notifications (identique à votre code)
-// ============================================================
 function NotificationsModal({
   visible, onClose, onClear,
   upcomingRendezVous, notificationsList,
@@ -112,9 +107,6 @@ function NotificationsModal({
   );
 }
 
-// ============================================================
-// Composant principal Profile (patient)
-// ============================================================
 export default function Profile({ navigation }) {
   const notifiedIdsRef      = useRef(new Set());
   const notificationInterval = useRef(null);
@@ -128,7 +120,6 @@ export default function Profile({ navigation }) {
   const [notificationsList, setNotificationsList] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [upcomingRendezVous, setUpcomingRendezVous] = useState([]);
-  const [showConversations, setShowConversations] = useState(false); // 👈 Pour la messagerie
   const [formData, setFormData] = useState({
     prenom: "", nom: "", telephone: "",
     adresse: "", age: "", dateNaissance: "", sexe: "",
@@ -150,7 +141,6 @@ export default function Profile({ navigation }) {
     setNotificationCount(prev => prev + 1);
   }, []);
 
-  // Vérification des rendez-vous à venir
   const checkUpcomingRendezVous = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem("token");
@@ -296,7 +286,6 @@ export default function Profile({ navigation }) {
     };
   }, [navigation, addNotification]);
 
-  // Chargement initial
   useEffect(() => {
     const loadData = async () => {
       await fetchUser();
@@ -421,35 +410,7 @@ export default function Profile({ navigation }) {
       />
 
       {/* Modal de messagerie (ConversationList) */}
-      <Modal
-        visible={showConversations}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowConversations(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: "#F5F7FA" }}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowConversations(false)}>
-              <Ionicons name="arrow-back" size={24} color="#3B82F6" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Messages</Text>
-            <View style={{ width: 40 }} />
-          </View>
-          <ConversationList
-            currentUser={user}
-            onSelect={(conversation) => {
-              setShowConversations(false);
-              navigation.navigate("PrivateChat", {
-                currentUserId: user.id,
-                otherUser: {
-                  id: conversation.user_id,
-                  name: conversation.user_name,
-                },
-              });
-            }}
-          />
-        </View>
-      </Modal>
+     
 
       {/* Modal d'édition du profil */}
       <Modal visible={modalVisible} animationType="slide" transparent>
@@ -483,9 +444,22 @@ export default function Profile({ navigation }) {
           <Text style={styles.headerTitle}>Mon Profil</Text>
           <View style={styles.headerRight}>
             {/* Bouton messages */}
-            <TouchableOpacity onPress={() => setShowConversations(true)} style={styles.iconButton}>
-              <Ionicons name="chatbubbles-outline" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
+            <TouchableOpacity
+      onPress={() => {
+  const stackNav = navigation.getParent()?.getParent?.() ?? navigation.getParent() ?? navigation;
+  stackNav.navigate("ConversationList", {
+    currentUserId: user.id,
+    currentUser: user,
+  });
+  console.log("nav state:", navigation.getState());
+  console.log("parent state:", navigation.getParent()?.getState());
+  console.log("parent2 state:", navigation.getParent()?.getParent?.()?.getState());
+
+}}
+      style={styles.iconButton}
+    >
+      <Ionicons name="chatbubbles-outline" size={24} color="#FFFFFF" />
+    </TouchableOpacity>
             {/* Bouton menu (drawer) */}
             <TouchableOpacity onPress={openDrawer} style={styles.iconButton}>
               <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
@@ -540,12 +514,16 @@ export default function Profile({ navigation }) {
           ))}
         </View>
 
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity style={styles.actionButton} onPress={openEditModal}>
-            <Ionicons name="create-outline" size={20} color="#3B82F6" />
-            <Text style={styles.actionButtonText}>Modifier le profil</Text>
-          </TouchableOpacity>
-        </View>
+       <View style={styles.actionsContainer}>
+                 <TouchableOpacity style={styles.actionButton} onPress={openEditModal}>
+                   <Ionicons name="create-outline" size={20} color="#FFF" />
+                   <Text style={styles.actionButtonText}>Modifier</Text>
+                 </TouchableOpacity>
+                 <TouchableOpacity style={[styles.actionButton, styles.settingsButton]} onPress={() => navigation.openDrawer()}>
+                   <Ionicons name="settings-outline" size={20} color="#FFF" />
+                   <Text style={styles.actionButtonText}>Paramètres</Text>
+                 </TouchableOpacity>
+               </View>
 
         <TouchableOpacity style={styles.logoutButton} onPress={() => confirmLogout(navigation)}>
           <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
@@ -556,9 +534,7 @@ export default function Profile({ navigation }) {
   );
 }
 
-// ============================================================
-// Styles
-// ============================================================
+
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: "#F5F7FA", paddingBottom: 30 },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F5F7FA" },
@@ -625,6 +601,10 @@ const styles = StyleSheet.create({
   saveButton: { flex: 1, backgroundColor: "#3B82F6", padding: 12, borderRadius: 10, alignItems: "center" },
   cancelButton: { flex: 1, backgroundColor: "#EF4444", padding: 12, borderRadius: 10, alignItems: "center" },
   buttonText: { color: "#fff", fontWeight: "bold" },
+ actionsContainer: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 20, marginBottom: 15, gap: 10 },
+  actionButton: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#10B981", paddingVertical: 14, borderRadius: 12, gap: 8, shadowColor: "#10B981", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
+  settingsButton: { backgroundColor: "#3B82F6" },
+  actionButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
 
   modalHeader: {
     flexDirection: "row",
