@@ -29,10 +29,14 @@ import MotDePasseOublier from "./component/motDePasseOublier";
 import RenitialiserMdp from "./component/renitialiserMdp";
 import ConsultationVideo from "./component/EspaceMedecin/ConsultationVideo";
 import Home from './component/Home';
+import MonAgenda from "./component/EspaceMedecin/Monagenda";
 import { initPusher, destroyPusher, isPusherConnected } from './src/utils/Echo';
 import PrivateChat from "./component/PrivateChat";
 import PublicForum from "./component/PublicForum";
 import ConversationListScreen from "./component/ConversationListScreen";
+import {registerBackgroundHandler} from "./src/utils/Notificationservice";
+import GestionSecretaires from './component/EspaceMedecin/GestionSecretaires';
+import DashboardSecretaire from './component/EspaceSecretaire/DashboardSecretaire';
 export const RendezVousCountContext = createContext({ count: 0, setCount: () => {} });
 
 const Stack = createNativeStackNavigator();
@@ -176,7 +180,8 @@ function DrawerMed() {
   component={ProfileMedecin} 
   options={{
     drawerLabel: "Mon Profil",
-    gestureEnabled: false,                   
+    gestureEnabled: false, 
+    headerShown: false ,                  
     headerStyle: { backgroundColor: "#10B981" }, 
     headerTitle: () => (                      
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -193,6 +198,17 @@ function DrawerMed() {
     ),
     headerRight: () => null,
   }} 
+/>
+<Drawer.Screen
+  name="GestionSecretaires"
+  component={GestionSecretaires}
+  options={{
+    drawerLabel: "Secrétaires",
+    headerShown: false,
+    drawerIcon: ({ color, size }) => (
+      <Ionicons name="people-outline" size={size} color={color} />
+    ),
+  }}
 />
       <Drawer.Screen name="Accueil" component={Home} options={{ drawerLabel: "Accueil", title: "Accueil" }} />
 
@@ -218,17 +234,52 @@ function DrawerMed() {
     </Drawer.Navigator>
   );
 }
-
+function DrawerSecretaire() {
+  return (
+    <Drawer.Navigator
+      screenOptions={({ navigation }) => ({
+        drawerType: "slide",
+        drawerStyle: { width: 220 },
+        headerShown: true,
+        headerStyle: { backgroundColor: "#8B5CF6" },
+        headerTintColor: "#FFFFFF",
+        headerTitleAlign: "center",
+        drawerActiveTintColor: "#8B5CF6",
+        drawerInactiveTintColor: "#64748B",
+        headerLeft: () => (
+          <TouchableOpacity style={{ marginLeft: 12 }} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        ),
+      })}
+    >
+      <Drawer.Screen
+        name="DashboardSecretaire"
+        component={DashboardSecretaire}
+        options={{
+          drawerLabel: "Tableau de bord",
+          headerShown: false,
+          drawerIcon: ({ color, size }) => (
+            <Ionicons name="grid-outline" size={size} color={color} />
+          ),
+        }}
+      />
+    </Drawer.Navigator>
+  );
+}
 function DrawerAdmin() {
   const headerRightIcons = {
     DashboardAdminDrawer: 'grid-outline',
     GestionSpecialite:    'medical-outline',
     GestionPatient:       'people-outline',
     GestionMedecin:       'person-add-outline',
+    Accueil:              'home-outline',
   };
 
   return (
+    // ✅ FIX : initialRouteName pointe sur DashboardAdminDrawer et non Accueil
     <Drawer.Navigator
+      initialRouteName="DashboardAdminDrawer"
       screenOptions={({ route, navigation }) => ({
         headerShown: true,
         headerStyle: { backgroundColor: "#3B82F6" },
@@ -256,19 +307,42 @@ function DrawerAdmin() {
             GestionSpecialite:    'medical-outline',
             GestionPatient:       'people-outline',
             GestionMedecin:       'person-add-outline',
+            Accueil:              'home-outline',
           };
           return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
         },
       })}
     >
-      <Drawer.Screen name="DashboardAdminDrawer" component={DashboardAdmin} options={{ drawerLabel: "Dashboard" }} />
-      <Drawer.Screen name="GestionSpecialite" component={GestionSpecialites} options={{ drawerLabel: "Spécialités" }} />
-      <Drawer.Screen name="GestionPatient" component={GestionPatients} options={{ drawerLabel: "Patients" }} />
-      <Drawer.Screen name="GestionMedecin" component={GestionMedecins} options={{ drawerLabel: "Médecins" }} />
+      {/* ✅ DashboardAdminDrawer en premier = écran initial */}
+      <Drawer.Screen
+        name="DashboardAdminDrawer"
+        component={DashboardAdmin}
+        options={{ drawerLabel: "Dashboard", title: "Dashboard Admin" , headerShown: false,}}
+      />
+      <Drawer.Screen
+        name="GestionSpecialite"
+        component={GestionSpecialites}
+        options={{ drawerLabel: "Spécialités", title: "Gestion des Spécialités" }}
+      />
+      <Drawer.Screen
+        name="GestionPatient"
+        component={GestionPatients}
+        options={{ drawerLabel: "Patients", title: "Gestion des Patients" }}
+      />
+      <Drawer.Screen
+        name="GestionMedecin"
+        component={GestionMedecins}
+        options={{ drawerLabel: "Médecins", title: "Gestion des Médecins" }}
+      />
+      <Drawer.Screen
+        name="Accueil"
+        component={Home}
+        options={{ drawerLabel: "Accueil", title: "Accueil" }}
+      />
     </Drawer.Navigator>
   );
 }
-
+registerBackgroundHandler();
 export default function App() {
   const [pusherStatus, setPusherStatus] = useState('initializing');
   const [rendezvousCount, setRendezvousCount] = useState(0);
@@ -337,6 +411,8 @@ export default function App() {
               <Stack.Screen name="Admin" component={DrawerAdmin} options={{ headerShown: false }} />
               <Stack.Screen name="Main" component={DrawerMenu} options={{ headerShown: false }} />
               <Stack.Screen name="Medecin" component={DrawerMed} options={{ headerShown: false }} />
+              <Stack.Screen name="MonAgenda" component={MonAgenda} options={{ title: "Mon Agenda" }} />
+
               <Stack.Screen name="Forum" component={PublicForum} options={{ title: "Poser votre question" }} />
               <Stack.Screen name="Symptomes" component={Symptomes} options={{ title: "Analyser vos Symptômes" }} />
               <Stack.Screen name="ListeMedecinsStack" component={ListeMedecins} options={{ title: "Liste des Médecins" }} />
@@ -358,7 +434,7 @@ export default function App() {
   component={PrivateChat}
   options={{ headerShown: false }}
 />
-       
+       <Stack.Screen name="Secretaire" component={DrawerSecretaire} options={{ headerShown: false }} />
  </Stack.Navigator>
           </NavigationContainer>
         </RendezVousCountContext.Provider>

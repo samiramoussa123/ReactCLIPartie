@@ -9,7 +9,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../../api/api';
 
-// ── Mapping symptôme FR → clé backend + icône + couleur ──
+// ── Mapping symptôme 
 const SYMPTOM_MAP = {
   'Fièvre':             { key: 'fever',                    icon: 'thermometer-outline',      color: '#EF4444' },
   'Toux':               { key: 'cough',                    icon: 'water-outline',             color: '#F97316' },
@@ -88,7 +88,7 @@ const SYMPTOM_ICONS = {
   'painful menstruation':       { icon: 'calendar-outline',          color: '#EC4899', bg: '#FDF2F8' },
 };
 
-// ── IMAGES pour chaque symptôme (fallback sur icône si absente) ──
+// ── IMAGES pour chaque symptôme 
 const SYMPTOM_IMAGES = {
   'fever':                    require('../assets/fever.png'),
   'cough':                    require('../assets/cough.png'),
@@ -269,15 +269,8 @@ export default function Symptomes({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => step === STEP.SELECT ? navigation.goBack() : reset()}>
-          <Ionicons name="arrow-back" size={24} color="#3B82F6" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Analyse des symptômes</Text>
-        <View style={{ width: 40 }} />
-      </View>
+     
 
-      {/* ─── ÉTAPE 1 : Sélection ─── */}
       {step === STEP.SELECT && (
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.hero} start={{x:0,y:0}} end={{x:1,y:1}}>

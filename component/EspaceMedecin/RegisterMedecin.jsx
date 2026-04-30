@@ -235,7 +235,7 @@ export default function RegisterMedecin({ navigation }) {
         message,
         [{ 
           text: "OK", 
-          onPress: () => navigation.replace("ProfileMedecin") 
+          onPress: () => navigation.replace("Medecin") 
         }]
       );
       

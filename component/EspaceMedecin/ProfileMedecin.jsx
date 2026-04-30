@@ -9,11 +9,20 @@ import API from "../../api/api";
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { confirmLogout } from "../../navigation/AppNavigate";
 import { subscribeToChannel, unsubscribeFromChannel } from '../../src/utils/Echo';
-function NotificationsModal({
-  visible, onClose, onClear,
-  upcomingRendezVous, notificationsList,
-  navigation,
-}) {
+import {
+  initNotifications,
+  showNotification,
+  showUrgentNotification,
+  scheduleNotification,
+  onForegroundNotificationEvent,
+  CHANNEL,
+} from '../../src/utils/Notificationservice';
+import { useNotifiedIds } from '../../src/utils/useNotifiedIds'; // ✅ import hook persistant
+
+// ─────────────────────────────────
+// Modal Notifications
+// ─────────────────────────────────
+function NotificationsModal({ visible, onClose, onClear, upcomingRendezVous, notificationsList, navigation }) {
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
       <View style={styles.notificationsModalContainer}>
@@ -35,10 +44,7 @@ function NotificationsModal({
                 <TouchableOpacity
                   key={index}
                   style={styles.upcomingItem}
-                  onPress={() => {
-                    onClose();
-                    navigation.navigate('GestionRendezVous');
-                  }}
+                  onPress={() => { onClose(); navigation.navigate('GestionRendezVous'); }}
                 >
                   <Ionicons
                     name={rdv.type === 'today' ? 'today' : 'time'}
@@ -66,22 +72,13 @@ function NotificationsModal({
                   notif.type === 'urgent' && styles.urgentNotification,
                   notif.type === 'today' && styles.todayNotification,
                 ]}
-                onPress={() => {
-                  if (notif.type === 'pusher' && notif.data) navigation.navigate('GestionRendezVous');
-                  onClose();
-                }}
+                onPress={() => { navigation.navigate('GestionRendezVous'); onClose(); }}
               >
                 <View style={styles.notificationIcon}>
                   <Ionicons
-                    name={
-                      notif.type === 'urgent' ? 'alert-circle' :
-                      notif.type === 'today'  ? 'calendar'     : 'notifications'
-                    }
+                    name={notif.type === 'urgent' ? 'alert-circle' : notif.type === 'today' ? 'calendar' : 'notifications'}
                     size={24}
-                    color={
-                      notif.type === 'urgent' ? '#EF4444' :
-                      notif.type === 'today'  ? '#F59E0B' : '#10B981'
-                    }
+                    color={notif.type === 'urgent' ? '#EF4444' : notif.type === 'today' ? '#F59E0B' : '#10B981'}
                   />
                 </View>
                 <View style={styles.notificationContent}>
@@ -100,50 +97,49 @@ function NotificationsModal({
   );
 }
 
+// ─────────────────────────────────
+// Composant principal
+// ─────────────────────────────────
 export default function ProfileMedecin({ navigation }) {
-  
-  const notifiedIdsRef      = useRef(new Set());
-  const notificationInterval = useRef(null);
+  // ── Refs ──
+  const notificationInterval = useRef(null); // ✅ supprimé notifiedIdsRef
   const channelRef           = useRef(null);
 
-  const [user, setUser]                       = useState(null);
-  const [loading, setLoading]                 = useState(true);
-  const [refreshing, setRefreshing]           = useState(false);
-  const [specialiteNom, setSpecialiteNom]     = useState("");
-  const [modalVisible, setModalVisible]       = useState(false);
-  const [formData, setFormData] = useState({
-    prenom: "", nom: "", email: "", telephone: "", adresse: "", age: "",
-  });
-
-  const [notificationCount, setNotificationCount] = useState(0);
-  const [notificationsList, setNotificationsList] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
+  // ── State ──
+  const [user, setUser]                             = useState(null);
+  const [loading, setLoading]                       = useState(true);
+  const [refreshing, setRefreshing]                 = useState(false);
+  const [specialiteNom, setSpecialiteNom]           = useState("");
+  const [modalVisible, setModalVisible]             = useState(false);
+  const [formData, setFormData] = useState({ prenom: "", nom: "", email: "", telephone: "", adresse: "", age: "" });
+  const [notificationCount, setNotificationCount]   = useState(0);
+  const [notificationsList, setNotificationsList]   = useState([]);
+  const [showNotifications, setShowNotifications]   = useState(false);
   const [upcomingRendezVous, setUpcomingRendezVous] = useState([]);
 
   const hasNotification = notificationCount > 0;
 
+  // ✅ Hook persistant — remplace notifiedIdsRef
+const { loadNotifiedIds, hasNotified, markNotified } = useNotifiedIds(user?.id, 'medecin');
+
+  // ── Init Notifee + chargement IDs persistés ──
+  useEffect(() => {
+    initNotifications();
+ if (user?.id) loadNotifiedIds();
+   [user?.id];    const unsubscribe = onForegroundNotificationEvent(navigation);
+    return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+  }, [navigation]);
+
+  // ── Fetch utilisateur ──
   const fetchUser = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
-      if (!token) {
-        navigation.replace("Login");
-        return;
-      }
-
+      if (!token) { navigation.replace("Login"); return; }
       const response = await API.get("/me");
       const userData = response.data?.user ?? response.data;
-
-      if (!userData || !userData.id) {
-        setUser(null);
-        return;
-      }
-
+      if (!userData?.id) { setUser(null); return; }
       setUser(userData);
-
-      if (userData?.medecin?.specialite_id) {
-        await fetchSpecialite(userData.medecin.specialite_id);
-      }
-
+      if (userData?.medecin?.specialite_id) await fetchSpecialite(userData.medecin.specialite_id);
     } catch (error) {
       if (error.response?.status === 401 || error.requiresLogout) {
         await AsyncStorage.removeItem("token");
@@ -168,12 +164,11 @@ export default function ProfileMedecin({ navigation }) {
         const all = await API.get("/specialite");
         const found = all.data.find((s) => s.id === specialiteId);
         if (found) setSpecialiteNom(found.nom_specialite);
-      } catch {
-        console.log("Impossible de charger la spécialité");
-      }
+      } catch { console.log("Impossible de charger la spécialité"); }
     }
   };
 
+  // ── Ajout notification sans doublon ──
   const addNotification = useCallback((notification) => {
     setNotificationsList(prev => {
       if (prev.some(n => n.id === notification.id)) return prev;
@@ -182,81 +177,94 @@ export default function ProfileMedecin({ navigation }) {
     setNotificationCount(prev => prev + 1);
   }, []);
 
- const getPatientName = (rdv) => {
-  if (rdv.patient_nom_complet && rdv.patient_nom_complet !== 'Patient inconnu')
-    return rdv.patient_nom_complet;
-  if (rdv.patient_prenom && rdv.patient_nom)
-    return `${rdv.patient_prenom} ${rdv.patient_nom}`;
-  if (rdv.patient?.user?.prenom && rdv.patient?.user?.nom)
-    return `${rdv.patient.user.prenom} ${rdv.patient.user.nom}`;
-  if (rdv.patient?.nom) return rdv.patient.nom;
-  return "Patient";
-};
+  // ── Nom du patient ──
+  const getPatientName = (rdv) => {
+    if (rdv.patient_nom_complet && rdv.patient_nom_complet !== 'Patient inconnu') return rdv.patient_nom_complet;
+    if (rdv.patient_prenom && rdv.patient_nom) return `${rdv.patient_prenom} ${rdv.patient_nom}`;
+    if (rdv.patient?.user?.prenom && rdv.patient?.user?.nom) return `${rdv.patient.user.prenom} ${rdv.patient.user.nom}`;
+    if (rdv.patient?.nom) return rdv.patient.nom;
+    return "Patient";
+  };
 
+  // ─────────────────────────────────────────────────────────
+  // ✅ checkUpcomingRendezVousMedecin — filtre date + persistance
+  // ─────────────────────────────────────────────────────────
   const checkUpcomingRendezVousMedecin = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem("token");
       if (!token || !user) return;
-
       const medecinId = user.medecin?.id;
       if (!medecinId) return;
 
       const response = await API.get(`/rendezvous/medecin/${medecinId}`);
       const rendezVousList = response.data?.rendez_vous ?? response.data?.data ?? [];
+      if (!rendezVousList.length) { setUpcomingRendezVous([]); return; }
 
-      if (!rendezVousList.length) {
-        setUpcomingRendezVous([]);
-        return;
-      }
-
-      const now = new Date();
+      const now   = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const upcoming = [];
-      const newNotifications = [];
 
-      rendezVousList.forEach(rdv => {
-        if (!rdv.date || !rdv.heure) return;
-        if (rdv.etat === 'refusé' || rdv.etat === 'annulé') return;
+      for (const rdv of rendezVousList) {
+        if (!rdv.date || !rdv.heure) continue;
+        if (rdv.etat === 'refusé' || rdv.etat === 'annulé') continue;
 
         const rdvDate = new Date(`${rdv.date}T${rdv.heure}`);
-        if (isNaN(rdvDate.getTime())) return;
+        if (isNaN(rdvDate.getTime())) continue;
 
-        const rdvDay = new Date(rdvDate.getFullYear(), rdvDate.getMonth(), rdvDate.getDate());
-        const hoursDiff = (rdvDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-        const timeStr = rdvDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        // ✅ FILTRE PRINCIPAL : ignorer tous les RDV passés
+        if (rdvDate.getTime() <= now.getTime()) continue;
+
+        const rdvDay      = new Date(rdvDate.getFullYear(), rdvDate.getMonth(), rdvDate.getDate());
+        const hoursDiff   = (rdvDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        const timeStr     = rdvDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
         const patientName = getPatientName(rdv);
 
+        // ── RDV aujourd'hui ──
         if (rdvDay.getTime() === today.getTime()) {
-          if (hoursDiff > -1) {
-            upcoming.push({
-              ...rdv,
-              type: "today",
-              message: `Aujourd'hui à ${timeStr} - ${patientName}`,
-            });
-          }
+          upcoming.push({
+            ...rdv,
+            type: "today",
+            message: `Aujourd'hui à ${timeStr} - ${patientName}`,
+          });
 
-          const todayKey = `today_${rdv.id}`;
-          if (!notifiedIdsRef.current.has(todayKey)) {
-            notifiedIdsRef.current.add(todayKey);
+          // 🔔 Notification "aujourd'hui" — une seule fois (persistée)
+          const todayKey = `medecin_today_${rdv.id}`; // ✅ préfixe medecin pour éviter collision avec patient
+          if (!hasNotified(todayKey)) {
+            await markNotified(todayKey);
             addNotification({
               id: todayKey,
               titre: "📅 Rendez-vous aujourd'hui",
               message: `${patientName} à ${timeStr}`,
               type: "today",
             });
+            await showNotification({
+              id:        todayKey,
+              title:     "📅 Rendez-vous aujourd'hui",
+              body:      `Patient : ${patientName} à ${timeStr}`,
+              channelId: CHANNEL.REMINDER,
+              data:      { screen: 'GestionRendezVous' },
+            });
           }
 
-          const urgentKey = `urgent_${rdv.id}`;
-          if (hoursDiff <= 1 && hoursDiff > 0 && !notifiedIdsRef.current.has(urgentKey)) {
-            notifiedIdsRef.current.add(urgentKey);
+          // 🚨 Notification urgente < 1h — une seule fois (persistée)
+          const urgentKey = `medecin_urgent_${rdv.id}`;
+          if (hoursDiff <= 1 && hoursDiff > 0 && !hasNotified(urgentKey)) {
+            await markNotified(urgentKey);
             addNotification({
               id: urgentKey,
               titre: "⚠️ Rendez-vous imminent",
               message: `${patientName} à ${timeStr} dans moins d'une heure`,
               type: "urgent",
             });
-            Alert.alert("⚠️ Rendez-vous imminent", `${patientName} à ${timeStr} commence bientôt !`);
+            await showUrgentNotification({
+              id:    urgentKey,
+              title: '⚠️ Rendez-vous imminent !',
+              body:  `${patientName} à ${timeStr} commence bientôt !`,
+              data:  { screen: 'GestionRendezVous' },
+            });
           }
+
+        // ── RDV dans les prochaines 24h ──
         } else if (hoursDiff > 0 && hoursDiff <= 24) {
           upcoming.push({
             ...rdv,
@@ -264,30 +272,52 @@ export default function ProfileMedecin({ navigation }) {
             message: `${patientName} le ${rdv.date} à ${timeStr}`,
           });
 
-          const upcomingKey = `upcoming_${rdv.id}`;
-          if (!notifiedIdsRef.current.has(upcomingKey)) {
-            notifiedIdsRef.current.add(upcomingKey);
+          // 🔔 Rappel J-1 — une seule fois (persisté)
+          const upcomingKey = `medecin_upcoming_${rdv.id}`;
+          if (!hasNotified(upcomingKey)) {
+            await markNotified(upcomingKey);
             addNotification({
               id: upcomingKey,
               titre: "🔔 Rappel rendez-vous",
-              message: `${patientName} dans ${Math.floor(hoursDiff * 60)} minutes`,
+              message: `${patientName} dans ${Math.floor(hoursDiff * 60)} min`,
               type: "reminder",
             });
+            await showNotification({
+              id:        upcomingKey,
+              title:     '🔔 Rappel rendez-vous',
+              body:      `${patientName} le ${rdv.date} à ${timeStr}`,
+              channelId: CHANNEL.REMINDER,
+              data:      { screen: 'GestionRendezVous' },
+            });
+
+            // ⏰ Notification programmée 30 min avant
+            const thirtyMinBefore = rdvDate.getTime() - 30 * 60 * 1000;
+            if (thirtyMinBefore > Date.now()) {
+              await scheduleNotification({
+                id:        `medecin_sched_${rdv.id}`,
+                title:     '⏰ Dans 30 minutes !',
+                body:      `Rendez-vous avec ${patientName} commence dans 30 minutes.`,
+                timestamp: thirtyMinBefore,
+                data:      { screen: 'GestionRendezVous' },
+              });
+            }
           }
         }
-      });
+      }
 
       setUpcomingRendezVous(upcoming);
     } catch (error) {
       console.error("❌ Erreur vérification RDV médecin:", error.message);
     }
-  }, [user, addNotification]);
+  }, [user, addNotification, hasNotified, markNotified]);
 
+  // ── Vérification périodique toutes les minutes ──
   const startPeriodicCheck = useCallback(() => {
     if (notificationInterval.current) clearInterval(notificationInterval.current);
     notificationInterval.current = setInterval(checkUpcomingRendezVousMedecin, 60000);
   }, [checkUpcomingRendezVousMedecin]);
 
+  // ── WebSocket médecin ──
   useEffect(() => {
     let isMounted = true;
     const setupWebSocket = async () => {
@@ -299,27 +329,32 @@ export default function ProfileMedecin({ navigation }) {
         const medecinId = currentUser.medecin?.id;
         if (!medecinId) return;
 
-        const channelName = `medecin.${medecinId}`;
-        const channel = await subscribeToChannel(channelName, 'rappel.rendez-vous', (data) => {
-          if (!isMounted) return;
-          addNotification({
-            id: `pusher_${Date.now()}`,
-            titre: data.titre || 'Rappel rendez-vous',
-            message: data.corps || 'Vous avez un rendez-vous prévu.',
-            type: 'pusher',
-            data,
-          });
-          Alert.alert(
-            data.titre || 'Rappel rendez-vous',
-            data.corps || 'Vous avez un rendez-vous prévu.',
-            [
-              { text: 'OK', style: 'cancel' },
-              { text: 'Voir détails', onPress: () => navigation.navigate('GestionRendezVous') },
-            ]
-          );
-        });
+        const channel = await subscribeToChannel(
+          `rendez-vous.medecin.${medecinId}`, // ✅ canal correct
+          'RappelRendezVousEvent',              // ✅ nom event Laravel
+          async (data) => {
+            if (!isMounted) return;
+            const notifId = `pusher_${data.rendez_vous_id}_${Date.now()}`;
+            const message = `Rendez-vous le ${data.date} à ${data.heure}`;
+
+            addNotification({
+              id:      notifId,
+              titre:   `🔔 Rappel (${data.type})`,
+              message: message,
+              type:    'pusher',
+              data,
+            });
+
+            await showNotification({
+              id:        notifId,
+              title:     '🔔 Rappel rendez-vous',
+              body:      message,
+              channelId: CHANNEL.REMINDER,
+              data:      { screen: 'GestionRendezVous' },
+            });
+          }
+        );
         channelRef.current = channel;
-        console.log('✅ WebSocket médecin connecté');
       } catch (error) {
         console.error('Erreur WebSocket médecin:', error);
       }
@@ -329,8 +364,9 @@ export default function ProfileMedecin({ navigation }) {
       isMounted = false;
       if (channelRef.current) unsubscribeFromChannel(channelRef.current);
     };
-  }, []);
+  }, [addNotification]);
 
+  // ── Chargement initial + AppState ──
   useEffect(() => {
     const loadData = async () => {
       await fetchUser();
@@ -338,20 +374,16 @@ export default function ProfileMedecin({ navigation }) {
       startPeriodicCheck();
     };
     loadData();
-
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') checkUpcomingRendezVousMedecin();
     });
-
     return () => {
       if (notificationInterval.current) clearInterval(notificationInterval.current);
       subscription.remove();
     };
   }, [user?.id]);
 
-  useEffect(() => {
-    fetchUser();
-  }, []);
+  useEffect(() => { fetchUser(); }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -363,12 +395,9 @@ export default function ProfileMedecin({ navigation }) {
   const openEditModal = () => {
     if (!user) return;
     setFormData({
-      prenom: user.prenom ?? "",
-      nom: user.nom ?? "",
-      email: user.email ?? "",
-      telephone: user.telephone ?? "",
-      adresse: user.adresse ?? "",
-      age: user.age ? String(user.age) : "",
+      prenom: user.prenom ?? "", nom: user.nom ?? "",
+      email: user.email ?? "", telephone: user.telephone ?? "",
+      adresse: user.adresse ?? "", age: user.age ? String(user.age) : "",
     });
     setModalVisible(true);
   };
@@ -376,15 +405,12 @@ export default function ProfileMedecin({ navigation }) {
   const modifierProfile = async () => {
     try {
       const response = await API.put(`/users/${user.id}`, {
-        prenom: formData.prenom,
-        nom: formData.nom,
-        email: formData.email,
-        telephone: formData.telephone,
+        prenom: formData.prenom, nom: formData.nom,
+        email: formData.email, telephone: formData.telephone,
         adresse: formData.adresse,
         age: formData.age ? parseInt(formData.age, 10) : null,
       });
-      const updatedUser = response.data.user ?? response.data;
-      setUser(updatedUser);
+      setUser(response.data.user ?? response.data);
       setModalVisible(false);
       Alert.alert("Succès", "Profil modifié avec succès");
     } catch (error) {
@@ -392,42 +418,29 @@ export default function ProfileMedecin({ navigation }) {
     }
   };
 
-  const handleClearNotifications = () => {
-    setNotificationsList([]);
-    setNotificationCount(0);
-  };
+  const handleClearNotifications = () => { setNotificationsList([]); setNotificationCount(0); };
+  const getInitials = () => !user ? "" : `${user.prenom?.charAt(0) || ""}${user.nom?.charAt(0) || ""}`.toUpperCase();
+  const getAvatarColor = () => ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"][(user?.id ?? 0) % 5];
 
-  const getInitials = () => {
-    if (!user) return "";
-    return `${user.prenom?.charAt(0) || ""}${user.nom?.charAt(0) || ""}`.toUpperCase();
-  };
+  // ── Écrans de chargement ──
+  if (loading) return (
+    <View style={styles.loadingContainer}>
+      <ActivityIndicator size="large" color="#10B981" />
+      <Text style={styles.loadingText}>Chargement...</Text>
+    </View>
+  );
 
-  const getAvatarColor = () => {
-    const colors = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"];
-    return colors[(user?.id ?? 0) % colors.length];
-  };
+  if (!user) return (
+    <View style={styles.loadingContainer}>
+      <Ionicons name="alert-circle-outline" size={50} color="#EF4444" />
+      <Text style={styles.errorText}>Aucune donnée</Text>
+      <TouchableOpacity style={styles.retryButton} onPress={() => navigation.replace("Login")}>
+        <Text style={styles.retryButtonText}>Se reconnecter</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
-        <Text style={styles.loadingText}>Chargement du profil...</Text>
-      </View>
-    );
-  }
-
-  if (!user) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Ionicons name="alert-circle-outline" size={50} color="#EF4444" />
-        <Text style={styles.errorText}>Aucune donnée utilisateur</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => navigation.replace("Login")}>
-          <Text style={styles.retryButtonText}>Se reconnecter</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
+  // ── Rendu ──
   return (
     <>
       <NotificationsModal
@@ -456,36 +469,6 @@ export default function ProfileMedecin({ navigation }) {
           </View>
         </View>
       </Modal>
-     
-    {/*/<Modal visible={showConversations} animationType="slide" transparent={false} onRequestClose={() => setShowConversations(false)}>
-  <View style={{ flex: 1, backgroundColor: "#F5F7FA" }}>
-    <View style={styles.modalHeader}>
-      <TouchableOpacity onPress={() => setShowConversations(false)}>
-        <Ionicons name="arrow-back" size={24} color="#10B981" />
-      </TouchableOpacity>
-      <Text style={styles.modalTitle}>Messages</Text>
-      <View style={{ width: 40 }} />
-    </View>
-    <ConversationList
-      currentUser={user}
-      onSelect={(conversation) => {
-        console.log("Conversation sélectionnée:", conversation);
-        if (!conversation || !conversation.user_id) {
-          Alert.alert("Erreur", "Conversation invalide");
-          return;
-        }
-        setShowConversations(false);
-        navigation.navigate("PrivateChat", {
-          currentUserId: user.id,
-          otherUser: {
-            id: conversation.user_id,
-            name: conversation.user_name,
-          },
-        });
-      }}
-    />
-  </View>
-</Modal>*/}
 
       <ScrollView
         contentContainerStyle={styles.container}
@@ -494,25 +477,15 @@ export default function ProfileMedecin({ navigation }) {
       >
         <View style={[styles.header, { backgroundColor: "#10B981" }]}>
           <View style={styles.headerContent}>
-             <TouchableOpacity
-              style={styles.backButton}
-              onPress={() =>{
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.navigate('Accueil');
-    }
-  }} >
-    
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Accueil')}>
               <Ionicons name="arrow-back-outline" size={24} color="#FFF" />
             </TouchableOpacity>
-           
             <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer()}>
               <Ionicons name="menu" size={24} color="#FFF" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
-                <Ionicons name="create-outline" size={24} color="#FFF" />
-              </TouchableOpacity>
+              <Ionicons name="create-outline" size={24} color="#FFF" />
+            </TouchableOpacity>
             <Text style={styles.headerTitle}>Mon Profil</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
               <TouchableOpacity style={styles.notificationIconBtn} onPress={() => setShowNotifications(true)}>
@@ -523,16 +496,12 @@ export default function ProfileMedecin({ navigation }) {
                   </View>
                 )}
               </TouchableOpacity>
-               <TouchableOpacity
-  style={styles.notificationIconBtn}
-  onPress={() => navigation.navigate("ConversationList", {
-    currentUserId: user.id,
-    currentUser: user,
-  })}
->
-  <Ionicons name="chatbubbles-outline" size={24} color="#FFF" />
-</TouchableOpacity>
-              
+              <TouchableOpacity
+                style={styles.notificationIconBtn}
+                onPress={() => navigation.navigate("ConversationList", { currentUserId: user.id, currentUser: user })}
+              >
+                <Ionicons name="chatbubbles-outline" size={24} color="#FFF" />
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -542,9 +511,7 @@ export default function ProfileMedecin({ navigation }) {
             <Text style={styles.avatarInitials}>{getInitials()}</Text>
           </View>
           <Text style={styles.userName}>Dr. {user.prenom} {user.nom}</Text>
-          <Text style={styles.specialite}>
-            {specialiteNom || user.medecin?.specialite?.nom_specialite || "Médecin"}
-          </Text>
+          <Text style={styles.specialite}>{specialiteNom || user.medecin?.specialite?.nom_specialite || "Médecin"}</Text>
           <View style={styles.badgeContainer}>
             <View style={styles.badge}>
               <Ionicons name="mail-outline" size={16} color="#10B981" />
@@ -555,27 +522,19 @@ export default function ProfileMedecin({ navigation }) {
 
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>📍 Coordonnées</Text>
-          <View style={styles.infoRow}>
-            <View style={styles.infoIcon}><Ionicons name="call-outline" size={20} color="#10B981" /></View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Téléphone</Text>
-              <Text style={styles.infoValue}>{user.telephone || "Non renseigné"}</Text>
+          {[
+            { icon: "call-outline", label: "Téléphone", value: user.telephone },
+            { icon: "location-outline", label: "Adresse", value: user.adresse },
+            { icon: "calendar-outline", label: "Âge", value: user.age ? `${user.age} ans` : null },
+          ].map(({ icon, label, value }) => (
+            <View style={styles.infoRow} key={label}>
+              <View style={styles.infoIcon}><Ionicons name={icon} size={20} color="#10B981" /></View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>{label}</Text>
+                <Text style={styles.infoValue}>{value || "Non renseigné"}</Text>
+              </View>
             </View>
-          </View>
-          <View style={styles.infoRow}>
-            <View style={styles.infoIcon}><Ionicons name="location-outline" size={20} color="#10B981" /></View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Adresse</Text>
-              <Text style={styles.infoValue}>{user.adresse || "Non renseigné"}</Text>
-            </View>
-          </View>
-          <View style={styles.infoRow}>
-            <View style={styles.infoIcon}><Ionicons name="calendar-outline" size={20} color="#10B981" /></View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Âge</Text>
-              <Text style={styles.infoValue}>{user.age ? `${user.age} ans` : "Non renseigné"}</Text>
-            </View>
-          </View>
+          ))}
         </View>
 
         <View style={styles.actionsContainer}>
@@ -583,6 +542,13 @@ export default function ProfileMedecin({ navigation }) {
             <Ionicons name="create-outline" size={20} color="#FFF" />
             <Text style={styles.actionButtonText}>Modifier</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+  style={[styles.actionButton, { backgroundColor: "#8B5CF6" }]}
+  onPress={() => navigation.navigate("GestionSecretaires")}
+>
+  <Ionicons name="people-outline" size={20} color="#FFF" />
+  <Text style={styles.actionButtonText}>Secrétaires</Text>
+</TouchableOpacity>
           <TouchableOpacity style={[styles.actionButton, styles.settingsButton]} onPress={() => navigation.openDrawer()}>
             <Ionicons name="settings-outline" size={20} color="#FFF" />
             <Text style={styles.actionButtonText}>Paramètres</Text>
@@ -593,7 +559,6 @@ export default function ProfileMedecin({ navigation }) {
           <Ionicons name="log-out-outline" size={20} color="#FFF" />
           <Text style={styles.logoutButtonText}>Se déconnecter</Text>
         </TouchableOpacity>
-
       </ScrollView>
     </>
   );
@@ -606,16 +571,15 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 16, color: "#64748B", marginTop: 10 },
   retryButton: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: "#10B981", borderRadius: 8 },
   retryButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "500" },
-
   header: { paddingTop: 50, paddingBottom: 30, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
   headerContent: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  backButton: { padding: 8 },
   menuButton: { padding: 8, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 20 },
   headerTitle: { fontSize: 20, fontWeight: "600", color: "#FFFFFF" },
   editButton: { padding: 8, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 20 },
   notificationIconBtn: { padding: 8, position: "relative" },
   notificationBadge: { position: "absolute", top: 2, right: 2, backgroundColor: "#EF4444", borderRadius: 10, minWidth: 18, height: 18, justifyContent: "center", alignItems: "center", paddingHorizontal: 4 },
   notificationBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "bold" },
-
   profileSection: { alignItems: "center", marginTop: -40, marginBottom: 20 },
   avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: "#FFFFFF", justifyContent: "center", alignItems: "center", marginBottom: 10 },
   avatarInitials: { fontSize: 28, fontWeight: "700", color: "#FFFFFF" },
@@ -624,7 +588,6 @@ const styles = StyleSheet.create({
   badgeContainer: { flexDirection: "row", justifyContent: "center", paddingHorizontal: 20 },
   badge: { flexDirection: "row", alignItems: "center", backgroundColor: "#E6F7E6", paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, gap: 6 },
   badgeText: { color: "#10B981", fontSize: 13, fontWeight: "500" },
-
   infoCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 20, marginHorizontal: 20, marginBottom: 20, shadowColor: "#1E293B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 3 },
   infoTitle: { fontSize: 18, fontWeight: "600", color: "#0F172A", marginBottom: 20 },
   infoRow: { flexDirection: "row", marginBottom: 16 },
@@ -632,16 +595,12 @@ const styles = StyleSheet.create({
   infoContent: { flex: 1, justifyContent: "center" },
   infoLabel: { fontSize: 12, color: "#64748B", marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.5 },
   infoValue: { fontSize: 15, color: "#0F172A", fontWeight: "500" },
-
   actionsContainer: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 20, marginBottom: 15, gap: 10 },
-  actionButton: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#10B981", paddingVertical: 14, borderRadius: 12, gap: 8, shadowColor: "#10B981", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
+  actionButton: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#10B981", paddingVertical: 14, borderRadius: 12, gap: 8, elevation: 4 },
   settingsButton: { backgroundColor: "#3B82F6" },
   actionButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
-
-  logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#EF4444", paddingVertical: 14, marginHorizontal: 20, borderRadius: 12, gap: 8, shadowColor: "#EF4444", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
+  logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#EF4444", paddingVertical: 14, marginHorizontal: 20, borderRadius: 12, gap: 8, elevation: 4 },
   logoutButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
-  versionText: { textAlign: "center", color: "#94A3B8", fontSize: 12, marginTop: 20 },
-
   modalContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" },
   modalContent: { width: "90%", backgroundColor: "#fff", padding: 20, borderRadius: 15 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
@@ -649,7 +608,6 @@ const styles = StyleSheet.create({
   saveButton: { flex: 1, backgroundColor: "#10B981", padding: 12, borderRadius: 10, alignItems: "center" },
   cancelButton: { flex: 1, backgroundColor: "#EF4444", padding: 12, borderRadius: 10, alignItems: "center" },
   buttonText: { color: "#fff", fontWeight: "bold" },
-
   notificationsModalContainer: { flex: 1, backgroundColor: "#F5F7FA" },
   notificationsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E2E8F0", paddingTop: Platform.OS === "ios" ? 50 : 16 },
   notificationsTitle: { fontSize: 18, fontWeight: "600", color: "#0F172A" },

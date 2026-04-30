@@ -222,7 +222,7 @@ export default function Home({ navigation }) {
           });
           
           subscriptionsRef.current.push(channelName);
-          console.log(`✅ Notifications activées pour ${channelName}`);
+          console.log(` Notifications activées pour ${channelName}`);
         }
       } catch (error) {
         console.error('Erreur configuration notifications:', error);

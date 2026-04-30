@@ -31,7 +31,11 @@ export default function Login({ navigation }) {
     navigation.replace("Medecin");
   } else if (role === "admin") {
     navigation.replace("Admin");
-  } else {
+
+  } 
+   else if (role === "secretaire") {
+    navigation.replace("Secretaire");
+   }else {
     navigation.replace("Main", {
       screen: "Accueil",
     });

@@ -6,26 +6,39 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from "react-native-vector-icons/Ionicons";
 import API from "../../api/api";
-import { RendezVousCountContext } from "../../App"; 
+import { RendezVousCountContext } from "../../App";
 
 export default function GestionRendezVous({ navigation }) {
   const { setCount } = useContext(RendezVousCountContext);
 
-  const [rendezvous, setRendezVous]   = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [refreshing, setRefreshing]   = useState(false);
-  const [idMedecin, setIdMedecin]     = useState(null);
+  const [rendezvous, setRendezVous]     = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [idMedecin, setIdMedecin]       = useState(null);
+  const [now, setNow]                   = useState(new Date());
+  const [filtreType, setFiltreType]     = useState("tous");
 
-  const [modalVisible, setModalVisible]         = useState(false);
-  const [rdvSelectionne, setRdvSelectionne]     = useState(null);
-  const [dossierRdv, setDossierRdv]             = useState(null);
+  // Modal consultation
+  const [modalVisible, setModalVisible]                   = useState(false);
+  const [rdvSelectionne, setRdvSelectionne]               = useState(null);
+  const [dossierRdv, setDossierRdv]                       = useState(null);
   const [consultationExistante, setConsultationExistante] = useState(null);
+  const [type, setType]                                   = useState("presentiel");
+  const [diagnostic, setDiagnostic]                       = useState("");
+  const [traitement, setTraitement]                       = useState("");
+  const [saving, setSaving]                               = useState(false);
+  const [loadingConsult, setLoadingConsult]               = useState(false);
 
-  const [type, setType]             = useState("presentiel");
-  const [diagnostic, setDiagnostic] = useState("");
-  const [traitement, setTraitement] = useState("");
-  const [saving, setSaving]         = useState(false);
-  const [loadingConsult, setLoadingConsult] = useState(false);
+  // Modal refus
+  const [refusModalVisible, setRefusModalVisible] = useState(false);
+  const [rdvARefuser, setRdvARefuser]             = useState(null);
+  const [motifRefus, setMotifRefus]               = useState("");
+  const [savingRefus, setSavingRefus]             = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const getPatientName = (rdv) => {
     if (rdv.patient_nom_complet && rdv.patient_nom_complet !== 'Patient inconnu')
@@ -54,29 +67,60 @@ export default function GestionRendezVous({ navigation }) {
     }
   };
 
-const chargerRendezVous = async (id) => {
-  try {
-    const response = await API.get(`/rendezvous/medecin/${id}`);
-    const rdvList = response.data?.rendez_vous ?? response.data?.data ?? response.data ?? [];
-    const list = Array.isArray(rdvList) ? rdvList : [];
-    const filteredList = list.filter(rdv => rdv.etat === "en attend" || rdv.etat === "confirmé");
-    setRendezVous(filteredList);
-    setCount(filteredList.length);
-  } catch (error) {
-    console.error("[GestionRDV] Chargement:", error.message);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
+  const chargerRendezVous = async (id) => {
+    try {
+      const response = await API.get(`/rendezvous/medecin/${id}`);
+      const rdvList = response.data?.rendez_vous ?? response.data?.data ?? response.data ?? [];
+      const list = Array.isArray(rdvList) ? rdvList : [];
+      const filteredList = list.filter(rdv => rdv.etat === "en attend" || rdv.etat === "confirmé");
+      setRendezVous(filteredList);
+      setCount(filteredList.length);
+    } catch (error) {
+      console.error("[GestionRDV] Chargement:", error.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   const changerEtat = async (rdvId, etat) => {
     try {
       await API.patch(`/rendezvous/${rdvId}/medecin/${idMedecin}/etat`, { etat });
       Alert.alert("Succès", `Rendez-vous ${etat}`);
-      chargerRendezVous(idMedecin); 
+      chargerRendezVous(idMedecin);
     } catch (error) {
       Alert.alert("Erreur", "Impossible de modifier l'état");
+    }
+  };
+
+  // Ouvrir le modal de refus
+  const ouvrirRefus = (rdv) => {
+    setRdvARefuser(rdv);
+    setMotifRefus("");
+    setRefusModalVisible(true);
+  };
+
+  // Confirmer le refus avec motif
+  const confirmerRefus = async () => {
+    if (!motifRefus.trim()) {
+      Alert.alert("Motif requis", "Veuillez indiquer un motif de refus pour informer le patient.");
+      return;
+    }
+    setSavingRefus(true);
+    try {
+      await API.patch(`/rendezvous/${rdvARefuser.id}/medecin/${idMedecin}/etat`, {
+        etat: "refusé",
+        motif_refus: motifRefus.trim(),
+      });
+      setRefusModalVisible(false);
+      setRdvARefuser(null);
+      setMotifRefus("");
+      Alert.alert("Refus envoyé", "Le patient sera informé du motif de refus.");
+      chargerRendezVous(idMedecin);
+    } catch (error) {
+      Alert.alert("Erreur", "Impossible d'envoyer le refus.");
+    } finally {
+      setSavingRefus(false);
     }
   };
 
@@ -86,35 +130,28 @@ const chargerRendezVous = async (id) => {
     setModalVisible(true);
     setConsultationExistante(null);
     setDossierRdv(null);
-    setType("presentiel");
+    setType(rdv.type_consultation ?? "presentiel");
     setDiagnostic("");
     setTraitement("");
 
     try {
       const resDossier = await API.get(`/dossiers/medecin/${idMedecin}`);
-      const dossiers   = resDossier.data?.dossiers ?? [];
-      const patientId  = rdv.patient?.id ?? rdv.id_patient;
-      const dossier    = dossiers.find(d =>
+      const dossiers = resDossier.data?.dossiers ?? [];
+      const patientId = rdv.patient?.id ?? rdv.id_patient;
+      const dossier = dossiers.find(d =>
         d.patient_id === patientId || d.patient?.id === patientId
       );
-
-      if (!dossier) {
-        setLoadingConsult(false);
-        return;
-      }
-
+      if (!dossier) { setLoadingConsult(false); return; }
       setDossierRdv(dossier);
-
-      const resConsult    = await API.get(`/consultations/dossier/${dossier.id}`);
+      const resConsult = await API.get(`/consultations/dossier/${dossier.id}`);
       const consultations = resConsult.data?.consultations ?? [];
-      const dateRdv       = rdv.date?.substring(0, 10);
-      const consult       = consultations.find(c =>
+      const dateRdv = rdv.date?.substring(0, 10);
+      const consult = consultations.find(c =>
         c.date_consultation?.substring(0, 10) === dateRdv
       );
-
       if (consult) {
         setConsultationExistante(consult);
-        setType(consult.type ?? "presentiel");
+        setType(consult.type ?? rdv.type_consultation ?? "presentiel");
         setDiagnostic(consult.diagnostique ?? "");
         setTraitement(consult.traitement ?? "");
       }
@@ -130,17 +167,15 @@ const chargerRendezVous = async (id) => {
       Alert.alert("Dossier manquant", "Ce patient n'a pas de dossier médical.\nAllez dans 'Dossiers Médicaux' pour en créer un.");
       return;
     }
-
     setSaving(true);
     try {
       const payload = {
         dossier_medical_id: dossierRdv.id,
-        date_consultation:  rdvSelectionne.date,
+        date_consultation: rdvSelectionne.date,
         type,
         diagnostique: diagnostic,
         traitement,
       };
-
       if (consultationExistante) {
         await API.put(`/consultations/${consultationExistante.id}`, payload);
         Alert.alert("Succès", "Consultation mise à jour ✓");
@@ -149,7 +184,6 @@ const chargerRendezVous = async (id) => {
         setConsultationExistante(res.data?.consultation ?? null);
         Alert.alert("Succès", "Consultation créée ✓");
       }
-
       setModalVisible(false);
       chargerRendezVous(idMedecin);
     } catch (e) {
@@ -170,7 +204,7 @@ const chargerRendezVous = async (id) => {
             await API.delete(`/consultations/${consultationExistante.id}`);
             Alert.alert("Succès", "Consultation supprimée");
             setModalVisible(false);
-            chargerRendezVous(idMedecin); 
+            chargerRendezVous(idMedecin);
           } catch (e) {
             Alert.alert("Erreur", "Impossible de supprimer");
           }
@@ -179,52 +213,58 @@ const chargerRendezVous = async (id) => {
     ]);
   };
 
+  const estConsultationAccessible = (rdv) => {
+    if (!rdv.date || !rdv.heure) return false;
+    let datePart = rdv.date;
+    if (datePart.includes(' ')) datePart = datePart.split(' ')[0];
+    let heurePart = rdv.heure;
+    if (heurePart.length === 5) heurePart = `${heurePart}:00`;
+    const [annee, mois, jour] = datePart.split('-').map(Number);
+    const [heures, minutes, secondes] = heurePart.split(':').map(Number);
+    const rdvDate = new Date(annee, mois - 1, jour, heures, minutes, secondes || 0);
+    const finAccessible = new Date(rdvDate.getTime() + 2 * 60 * 60 * 1000);
+    return rdvDate <= now && now <= finAccessible;
+  };
 
   const demarrerVideo = async (rdv) => {
     try {
       const resDossier = await API.get(`/dossiers/medecin/${idMedecin}`);
-      const dossiers   = resDossier.data?.dossiers ?? [];
-      const patientId  = rdv.patient?.id ?? rdv.id_patient;
-      const dossier    = dossiers.find(d =>
+      const dossiers = resDossier.data?.dossiers ?? [];
+      const patientId = rdv.patient?.id ?? rdv.id_patient;
+      const dossier = dossiers.find(d =>
         d.patient_id === patientId || d.patient?.id === patientId
       );
-
       if (!dossier) {
         Alert.alert("Erreur", "Aucun dossier médical pour ce patient.\nCréez-en un d'abord.");
         return;
       }
-
-      const resConsult    = await API.get(`/consultations/dossier/${dossier.id}`);
+      const resConsult = await API.get(`/consultations/dossier/${dossier.id}`);
       const consultations = resConsult.data?.consultations ?? [];
-      const dateRdv       = rdv.date?.substring(0, 10);
-
+      const dateRdv = rdv.date?.substring(0, 10);
       let consultation = consultations.find(c =>
         c.type === "video" && c.date_consultation?.substring(0, 10) === dateRdv
       );
-
       if (!consultation) {
         const res = await API.post("/consultations", {
           dossier_medical_id: dossier.id,
-          date_consultation:  rdv.date,
+          date_consultation: rdv.date,
           type: "video",
+          rendez_vous_id: rdv.id,
         });
         consultation = res.data?.consultation;
       }
-
       if (!consultation?.id) {
         Alert.alert("Erreur", "Impossible de créer la consultation vidéo");
         return;
       }
-
       const userData = await AsyncStorage.getItem("userData");
       const user = userData ? JSON.parse(userData) : {};
       const medecinName = `${user.prenom || "Dr"} ${user.nom || ""}`.trim() || "Médecin";
-
       navigation.navigate("ConsultationVideo", {
         consultationId: consultation.id,
         role: "medecin",
         userName: medecinName,
-        roomId: consultation.room_id || rdv.id 
+        roomId: consultation.room_id || rdv.id,
       });
     } catch (e) {
       Alert.alert("Erreur", e.response?.data?.message ?? "Erreur lors du démarrage vidéo");
@@ -240,6 +280,24 @@ const chargerRendezVous = async (id) => {
     }
   };
 
+  const getTypeInfos = (typeConsultation) => {
+    const t = typeConsultation ?? "presentiel";
+    if (t === "en_ligne") return { label: "En ligne",   icon: "videocam-outline",  badgeStyle: styles.typeBadgeEnLigne,    textStyle: styles.typeBadgeTextBleu };
+    return                       { label: "Présentiel", icon: "business-outline",  badgeStyle: styles.typeBadgePresentiel, textStyle: styles.typeBadgeTextVert };
+  };
+
+  const rdvFiltres = rendezvous.filter(rdv => {
+    if (filtreType === "tous") return true;
+    return (rdv.type_consultation ?? "presentiel") === filtreType;
+  });
+
+  const suggestionsMotif = [
+    "Je ne suis pas disponible à cette date.",
+    "Je suis en congé ce jour-là.",
+    "Urgence médicale imprévue.",
+    "Créneau déjà réservé.",
+  ];
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -251,7 +309,30 @@ const chargerRendezVous = async (id) => {
 
   return (
     <View style={styles.container}>
-     
+
+      <TouchableOpacity style={styles.agendaButton} onPress={() => navigation.navigate("MonAgenda")}>
+        <Ionicons name="calendar-outline" size={22} color="#FFF" />
+        <Text style={styles.agendaButtonText}>Configurer mon agenda</Text>
+      </TouchableOpacity>
+
+      <View style={styles.filtreBar}>
+        {[
+          { key: "tous",       label: "Tous",       icon: "list-outline"     },
+          { key: "presentiel", label: "Présentiel", icon: "business-outline" },
+          { key: "en_ligne",   label: "En ligne",   icon: "videocam-outline" },
+        ].map(f => (
+          <TouchableOpacity
+            key={f.key}
+            style={[styles.filtreBtn, filtreType === f.key && styles.filtreBtnActif]}
+            onPress={() => setFiltreType(f.key)}
+          >
+            <Ionicons name={f.icon} size={14} color={filtreType === f.key ? "#FFF" : "#64748B"} />
+            <Text style={[styles.filtreBtnText, filtreType === f.key && styles.filtreBtnTextActif]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       <ScrollView
         refreshControl={
@@ -262,73 +343,194 @@ const chargerRendezVous = async (id) => {
           />
         }
       >
-        {rendezvous.length === 0 ? (
+        {rdvFiltres.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="calendar-outline" size={60} color="#CBD5E1" />
-            <Text style={styles.emptyText}>Aucun rendez-vous</Text>
+            <Text style={styles.emptyText}>
+              {filtreType === "tous"
+                ? "Aucun rendez-vous"
+                : `Aucun rendez-vous ${filtreType === "en_ligne" ? "en ligne" : "présentiel"}`}
+            </Text>
           </View>
         ) : (
-          rendezvous.map((rdv) => (
-            <View key={rdv.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {getPatientName(rdv).charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.patientNom}>{getPatientName(rdv)}</Text>
-                  <View style={styles.dateRow}>
-                    <Ionicons name="calendar-outline" size={13} color="#64748B" />
-                    <Text style={styles.dateText}>{rdv.date} à {rdv.heure}</Text>
+          rdvFiltres.map((rdv) => {
+            const typeInfos = getTypeInfos(rdv.type_consultation);
+            return (
+              <View key={rdv.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {getPatientName(rdv).charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.patientNom}>{getPatientName(rdv)}</Text>
+                    <View style={styles.dateRow}>
+                      <Ionicons name="calendar-outline" size={13} color="#64748B" />
+                      <Text style={styles.dateText}>{rdv.date} à {rdv.heure}</Text>
+                    </View>
+                    <View style={[styles.typeBadge, typeInfos.badgeStyle]}>
+                      <Ionicons
+                        name={typeInfos.icon} size={11}
+                        color={typeInfos.textStyle === styles.typeBadgeTextBleu ? "#1D4ED8" : "#065F46"}
+                      />
+                      <Text style={typeInfos.textStyle}>{typeInfos.label}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.etatBadge, { backgroundColor: getEtatColor(rdv.etat) + "20" }]}>
+                    <Text style={[styles.etatText, { color: getEtatColor(rdv.etat) }]}>{rdv.etat}</Text>
                   </View>
                 </View>
-                <View style={[styles.etatBadge, { backgroundColor: getEtatColor(rdv.etat) + "20" }]}>
-                  <Text style={[styles.etatText, { color: getEtatColor(rdv.etat) }]}>{rdv.etat}</Text>
-                </View>
+
+                {rdv.motif && (
+                  <View style={styles.motifRow}>
+                    <Ionicons name="chatbubble-outline" size={13} color="#94A3B8" />
+                    <Text style={styles.motifText}>{rdv.motif}</Text>
+                  </View>
+                )}
+
+                <View style={styles.divider} />
+
+                {rdv.etat === "en attend" && (
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.confirmBtn} onPress={() => changerEtat(rdv.id, "confirmé")}>
+                      <Ionicons name="checkmark" size={16} color="#FFF" />
+                      <Text style={styles.btnText}>Confirmer</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.refuseBtn} onPress={() => ouvrirRefus(rdv)}>
+                      <Ionicons name="close" size={16} color="#FFF" />
+                      <Text style={styles.btnText}>Refuser</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {rdv.etat === "confirmé" && (
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.consultBtn} onPress={() => ouvrirConsultation(rdv)}>
+                      <Ionicons name="document-text-outline" size={16} color="#FFF" />
+                      <Text style={styles.btnText}>Consultation</Text>
+                    </TouchableOpacity>
+                    {(rdv.type_consultation ?? "presentiel") === "en_ligne" && (
+                      <TouchableOpacity
+                        style={[styles.videoBtn, !estConsultationAccessible(rdv) && styles.videoBtnDisabled]}
+                        onPress={() => demarrerVideo(rdv)}
+                        disabled={!estConsultationAccessible(rdv)}
+                      >
+                        <Ionicons name="videocam" size={16} color="#FFF" />
+                        <Text style={styles.btnText}>Vidéo</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
               </View>
-
-              {rdv.motif && (
-                <View style={styles.motifRow}>
-                  <Ionicons name="chatbubble-outline" size={13} color="#94A3B8" />
-                  <Text style={styles.motifText}>{rdv.motif}</Text>
-                </View>
-              )}
-
-              <View style={styles.divider} />
-
-              {rdv.etat === "en attend" && (
-                <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.confirmBtn} onPress={() => changerEtat(rdv.id, "confirmé")}>
-                    <Ionicons name="checkmark" size={16} color="#FFF" />
-                    <Text style={styles.btnText}>Confirmer</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.refuseBtn} onPress={() => changerEtat(rdv.id, "refusé")}>
-                    <Ionicons name="close" size={16} color="#FFF" />
-                    <Text style={styles.btnText}>Refuser</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {rdv.etat === "confirmé" && (
-                <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.consultBtn} onPress={() => ouvrirConsultation(rdv)}>
-                    <Ionicons name="document-text-outline" size={16} color="#FFF" />
-                    <Text style={styles.btnText}>Consultation</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.videoBtn} onPress={() => demarrerVideo(rdv)}>
-                    <Ionicons name="videocam" size={16} color="#FFF" />
-                    <Text style={styles.btnText}>Vidéo</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            
-            </View>
-          ))
+            );
+          })
         )}
         <View style={{ height: 20 }} />
       </ScrollView>
 
+      {/* ─── Modal refus avec motif ─── */}
+      <Modal visible={refusModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+
+            <View style={styles.modalHeader}>
+              <View style={styles.refusTitleRow}>
+                <View style={styles.refusIconCircle}>
+                  <Ionicons name="close" size={18} color="#EF4444" />
+                </View>
+                <Text style={styles.modalTitle}>Refuser le rendez-vous</Text>
+              </View>
+              <TouchableOpacity onPress={() => setRefusModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {rdvARefuser && (
+              <View style={styles.rdvInfo}>
+                <Ionicons name="person-outline" size={14} color="#3B82F6" />
+                <Text style={styles.rdvInfoText}>
+                  {getPatientName(rdvARefuser)} • {rdvARefuser.date} à {rdvARefuser.heure}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.refusInfoBox}>
+              <Ionicons name="information-circle-outline" size={16} color="#3B82F6" />
+              <Text style={styles.refusInfoText}>
+                Le patient recevra votre message d'excuse et le motif du refus.
+              </Text>
+            </View>
+
+            <Text style={styles.inputLabel}>
+              Motif du refus <Text style={styles.required}>*</Text>
+            </Text>
+
+            {/* Suggestions rapides */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.suggestionsScroll}>
+              {suggestionsMotif.map((s, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.suggestionChip, motifRefus === s && styles.suggestionChipActif]}
+                  onPress={() => setMotifRefus(s)}
+                >
+                  <Text style={[styles.suggestionText, motifRefus === s && styles.suggestionTextActif]}>
+                    {s}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TextInput
+              style={[styles.input, styles.inputMulti]}
+              placeholder="Ex : Je ne suis pas disponible à cette date, je suis en congé ce jour-là..."
+              placeholderTextColor="#94A3B8"
+              value={motifRefus}
+              onChangeText={setMotifRefus}
+              multiline
+              numberOfLines={4}
+              maxLength={500}
+            />
+            <Text style={styles.charCount}>{motifRefus.length}/500</Text>
+
+            {/* Aperçu du message reçu par le patient */}
+            {motifRefus.trim().length > 0 && (
+              <View style={styles.apercuBox}>
+                <Text style={styles.apercuLabel}>Aperçu du message reçu par le patient :</Text>
+                <Text style={styles.apercuTexte}>
+                  {"Votre rendez-vous du "}
+                  <Text style={{ fontWeight: "700" }}>{rdvARefuser?.date}</Text>
+                  {" a été refusé.\n\n"}
+                  <Text style={{ fontStyle: "italic" }}>"{motifRefus.trim()}"</Text>
+                  {"\n\nNous nous excusons pour la gêne occasionnée."}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setRefusModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.refusSaveBtn, (savingRefus || !motifRefus.trim()) && styles.saveBtnDisabled]}
+                onPress={confirmerRefus}
+                disabled={savingRefus || !motifRefus.trim()}
+              >
+                {savingRefus
+                  ? <ActivityIndicator color="#FFF" />
+                  : <>
+                      <Ionicons name="close-circle-outline" size={16} color="#FFF" />
+                      <Text style={styles.saveBtnText}>Confirmer le refus</Text>
+                    </>
+                }
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Modal consultation ─── */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -372,7 +574,6 @@ const chargerRendezVous = async (id) => {
                     </Text>
                   </View>
                 )}
-
                 {dossierRdv && (
                   <View style={styles.dossierInfo}>
                     <Ionicons name="folder-open-outline" size={14} color="#10B981" />
@@ -442,6 +643,7 @@ const chargerRendezVous = async (id) => {
           </View>
         </View>
       </Modal>
+
     </View>
   );
 }
@@ -451,70 +653,87 @@ const styles = StyleSheet.create({
   center:      { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { color: "#64748B", marginTop: 10 },
 
-  header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    backgroundColor: "#10B981", paddingHorizontal: 20,
-    paddingTop: 50, paddingBottom: 16,
-  },
-  headerTitle: { fontSize: 20, fontWeight: "bold", color: "#FFF" },
-  headerBadge: { backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
-  headerBadgeText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
-
   empty:     { alignItems: "center", marginTop: 80, gap: 12 },
   emptyText: { color: "#94A3B8", fontSize: 16 },
 
-  card: {
-    backgroundColor: "#FFF", marginHorizontal: 16, marginTop: 12,
-    borderRadius: 14, padding: 16, elevation: 2,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06,
-  },
+  agendaButton:     { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#3B82F6", marginHorizontal: 16, marginTop: 12, marginBottom: 4, paddingVertical: 12, borderRadius: 12, gap: 8 },
+  agendaButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
+
+  filtreBar:          { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginVertical: 10 },
+  filtreBtn:          { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 9, borderRadius: 20, backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: "#E2E8F0" },
+  filtreBtnActif:     { backgroundColor: "#10B981", borderColor: "#10B981" },
+  filtreBtnText:      { fontSize: 12, fontWeight: "600", color: "#64748B" },
+  filtreBtnTextActif: { color: "#FFF" },
+
+  card:        { backgroundColor: "#FFF", marginHorizontal: 16, marginTop: 12, borderRadius: 14, padding: 16, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06 },
   cardHeader:  { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar:      { width: 44, height: 44, borderRadius: 22, backgroundColor: "#DCFCE7", justifyContent: "center", alignItems: "center" },
   avatarText:  { fontSize: 18, fontWeight: "bold", color: "#10B981" },
   patientNom:  { fontSize: 15, fontWeight: "700", color: "#0F172A" },
   dateRow:     { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   dateText:    { fontSize: 13, color: "#64748B" },
+
+  typeBadge:           { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, marginTop: 4 },
+  typeBadgePresentiel: { backgroundColor: "#DCFCE7" },
+  typeBadgeEnLigne:    { backgroundColor: "#DBEAFE" },
+  typeBadgeTextVert:   { fontSize: 11, fontWeight: "600", color: "#065F46" },
+  typeBadgeTextBleu:   { fontSize: 11, fontWeight: "600", color: "#1D4ED8" },
+
   etatBadge:   { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   etatText:    { fontSize: 12, fontWeight: "700" },
   motifRow:    { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
   motifText:   { fontSize: 13, color: "#64748B", flex: 1 },
   divider:     { height: 1, backgroundColor: "#F1F5F9", marginVertical: 12 },
-deleteBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#EF4444", padding: 10, borderRadius: 10 },
   actionRow:   { flexDirection: "row", gap: 10 },
   confirmBtn:  { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#10B981", padding: 10, borderRadius: 10 },
   refuseBtn:   { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#EF4444", padding: 10, borderRadius: 10 },
   consultBtn:  { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#8B5CF6", padding: 10, borderRadius: 10 },
   videoBtn:    { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#3B82F6", padding: 10, borderRadius: 10 },
+  videoBtnDisabled: { backgroundColor: "#94A3B8", opacity: 0.6 },
   btnText:     { color: "#FFF", fontWeight: "700", fontSize: 13 },
 
-  modalOverlay:      { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalBox:          { backgroundColor: "#FFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "92%" },
-  modalHeader:       { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
-  modalHeaderActions:{ flexDirection: "row", alignItems: "center", gap: 12 },
-  modalTitle:        { fontSize: 18, fontWeight: "bold", color: "#0F172A" },
-  deleteIconBtn:     { padding: 4 },
-  rdvInfo:       { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EFF6FF", padding: 10, borderRadius: 10, marginBottom: 16 },
-  rdvInfoText:   { fontSize: 13, color: "#3B82F6", fontWeight: "600" },
-  dossierInfo:   { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#F0FDF4", padding: 8, borderRadius: 8, marginBottom: 14 },
-  dossierInfoText: { fontSize: 13, color: "#10B981", fontWeight: "600" },
-  modalLoading:      { alignItems: "center", paddingVertical: 40, gap: 12 },
-  modalLoadingText:  { color: "#64748B" },
-  alertBox:  { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FFFBEB", borderWidth: 1, borderColor: "#FDE68A", borderRadius: 10, padding: 12, marginBottom: 16 },
-  alertText: { fontSize: 13, color: "#92400E", flex: 1, lineHeight: 20 },
+  // Styles modal refus
+  refusTitleRow:       { flexDirection: "row", alignItems: "center", gap: 10 },
+  refusIconCircle:     { width: 32, height: 32, borderRadius: 16, backgroundColor: "#FEE2E2", justifyContent: "center", alignItems: "center" },
+  refusInfoBox:        { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#EFF6FF", borderRadius: 10, padding: 10, marginBottom: 14 },
+  refusInfoText:       { fontSize: 13, color: "#1D4ED8", flex: 1, lineHeight: 18 },
+  required:            { color: "#EF4444" },
+  charCount:           { fontSize: 11, color: "#94A3B8", textAlign: "right", marginTop: -10, marginBottom: 12 },
+  suggestionsScroll:   { marginBottom: 10 },
+  suggestionChip:      { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: "#E2E8F0", marginRight: 8 },
+  suggestionChipActif: { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" },
+  suggestionText:      { fontSize: 12, color: "#475569" },
+  suggestionTextActif: { color: "#991B1B", fontWeight: "600" },
+  apercuBox:           { backgroundColor: "#FFF8F8", borderWidth: 1, borderColor: "#FECACA", borderRadius: 10, padding: 12, marginBottom: 14 },
+  apercuLabel:         { fontSize: 11, fontWeight: "600", color: "#94A3B8", marginBottom: 6, textTransform: "uppercase" },
+  apercuTexte:         { fontSize: 13, color: "#334155", lineHeight: 20 },
+  refusSaveBtn:        { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 14, borderRadius: 12, backgroundColor: "#EF4444" },
 
-  typeRow:         { flexDirection: "row", gap: 10, marginBottom: 16 },
-  typeBtn:         { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#E2E8F0", backgroundColor: "#F8FAFC" },
-  typeBtnActif:    { backgroundColor: "#10B981", borderColor: "#10B981" },
-  typeBtnText:     { fontSize: 14, fontWeight: "600", color: "#64748B" },
-
-  inputLabel:  { fontSize: 13, fontWeight: "600", color: "#475569", marginBottom: 6 },
-  input:       { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, padding: 12, fontSize: 14, color: "#0F172A", marginBottom: 14 },
-  inputMulti:  { minHeight: 90, textAlignVertical: "top" },
-
-  modalActions:    { flexDirection: "row", gap: 12, marginTop: 8, marginBottom: 20 },
-  cancelBtn:       { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#F1F5F9", alignItems: "center" },
-  cancelBtnText:   { color: "#64748B", fontWeight: "600" },
-  saveBtn:         { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#10B981", alignItems: "center" },
-  saveBtnDisabled: { backgroundColor: "#CBD5E1" },
-  saveBtnText:     { color: "#FFF", fontWeight: "700" },
+  modalOverlay:       { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalBox:           { backgroundColor: "#FFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "92%" },
+  modalHeader:        { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  modalHeaderActions: { flexDirection: "row", alignItems: "center", gap: 12 },
+  modalTitle:         { fontSize: 18, fontWeight: "bold", color: "#0F172A" },
+  deleteIconBtn:      { padding: 4 },
+  rdvInfo:            { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EFF6FF", padding: 10, borderRadius: 10, marginBottom: 16 },
+  rdvInfoText:        { fontSize: 13, color: "#3B82F6", fontWeight: "600" },
+  dossierInfo:        { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#F0FDF4", padding: 8, borderRadius: 8, marginBottom: 14 },
+  dossierInfoText:    { fontSize: 13, color: "#10B981", fontWeight: "600" },
+  modalLoading:       { alignItems: "center", paddingVertical: 40, gap: 12 },
+  modalLoadingText:   { color: "#64748B" },
+  alertBox:           { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FFFBEB", borderWidth: 1, borderColor: "#FDE68A", borderRadius: 10, padding: 12, marginBottom: 16 },
+  alertText:          { fontSize: 13, color: "#92400E", flex: 1, lineHeight: 20 },
+  typeRow:            { flexDirection: "row", gap: 10, marginBottom: 16 },
+  typeBtn:            { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#E2E8F0", backgroundColor: "#F8FAFC" },
+  typeBtnActif:       { backgroundColor: "#10B981", borderColor: "#10B981" },
+  typeBtnText:        { fontSize: 14, fontWeight: "600", color: "#64748B" },
+  inputLabel:         { fontSize: 13, fontWeight: "600", color: "#475569", marginBottom: 6 },
+  input:              { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, padding: 12, fontSize: 14, color: "#0F172A", marginBottom: 14 },
+  inputMulti:         { minHeight: 90, textAlignVertical: "top" },
+  modalActions:       { flexDirection: "row", gap: 12, marginTop: 8, marginBottom: 20 },
+  cancelBtn:          { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#F1F5F9", alignItems: "center" },
+  cancelBtnText:      { color: "#64748B", fontWeight: "600" },
+  saveBtn:            { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#10B981", alignItems: "center" },
+  saveBtnDisabled:    { backgroundColor: "#CBD5E1" },
+  saveBtnText:        { color: "#FFF", fontWeight: "700" },
 });

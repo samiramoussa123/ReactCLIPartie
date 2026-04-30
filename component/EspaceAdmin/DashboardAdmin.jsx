@@ -27,7 +27,10 @@ export default function DashboardAdmin({ navigation }) {
   useEffect(() => {
     fetchUser();
   }, []);
-
+ const goBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Accueil');
+  };
   const fetchUser = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
@@ -35,6 +38,7 @@ export default function DashboardAdmin({ navigation }) {
         navigation.replace("Login");
         return;
       }
+     
 
       const response = await API.get("/me");
       const userData = response.data?.user ?? response.data;
@@ -115,6 +119,9 @@ const handleLogout = () => confirmLogout(navigation);
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
+          <TouchableOpacity onPress={goBack} style={styles.backButton}>
+                      <Ionicons name="arrow-back-outline" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
           <TouchableOpacity
             style={styles.menuButton}
             onPress={() => navigation.openDrawer?.()}
@@ -267,6 +274,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F7FA" },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 10, color: "#64748B" },
+  backButton: { padding: 8, width: 40 },
 
   header: {
     backgroundColor: "#56b5f4", paddingTop: 50, paddingBottom: 25,
